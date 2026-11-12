@@ -84,3 +84,17 @@ func TestEachMapMutation(t *testing.T) {
 		t.Errorf("got %q, %v; want %q", got, err, "a=1;b=;")
 	}
 }
+
+// A hash partial copies its context's keys (JS Utils.extend); each copied
+// key is an op, so a big context can't make every call cost O(len).
+func TestPartialHashCopyOps(t *testing.T) {
+	tpl, _ := ParseWithOptions("{{#each a}}{{> p ../a k=1}}{{/each}}", Options{Limits: Limits{MaxOps: 100_000}})
+	if err := tpl.RegisterPartial("p", "{{k}}"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := tpl.Render(map[string]any{"a": make([]any, 1000)}) // 10^6 copies
+	var le *LimitError
+	if !errors.As(err, &le) || le.What != "ops" {
+		t.Errorf("err = %v, want ops LimitError", err)
+	}
+}

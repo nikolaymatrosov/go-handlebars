@@ -277,14 +277,17 @@ func (s *renderState) partialContext(n *partialNode, ctx any) (any, error) {
 	obj := &object{vals: make(map[string]any, len(n.hash))}
 	if !isNull(pctx) {
 		i := 0
-		_ = forOwn(pctx, func(v any, key string, _ int, arr, _ bool) error {
+		err := forOwn(pctx, func(v any, key string, _ int, arr, _ bool) error {
 			if arr {
 				key = strconv.Itoa(i)
 				i++
 			}
 			obj.set(key, v)
-			return nil
+			return s.step() // a copied key is an op: a big context can't make each call O(len)
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, kv := range n.hash {
 		v, err := s.param(kv.value, ctx)
