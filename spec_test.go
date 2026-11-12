@@ -240,11 +240,14 @@ func printStubs(err error) {
 }
 
 // buildOptions is the single compileOptions -> Options mapping.
-// Unknown keys fail the test so nothing is silently ignored.
-func buildOptions(t *testing.T, co map[string]any) Options {
+// Unknown keys and wrong value types are errors (a FAIL) so nothing is silently ignored.
+func buildOptions(co map[string]any) (Options, error) {
 	var o Options
 	for k, v := range co {
-		b, _ := v.(bool)
+		b, isBool := v.(bool)
+		if k != "knownHelpers" && !isBool {
+			return o, fmt.Errorf("compileOption %q: want bool, got %T", k, v)
+		}
 		switch k {
 		case "strict":
 			o.Strict = b
@@ -256,8 +259,14 @@ func buildOptions(t *testing.T, co map[string]any) Options {
 			o.Data = &b
 		case "knownHelpers":
 			o.KnownHelpers = map[string]bool{}
-			for name, on := range v.(map[string]any) {
-				o.KnownHelpers[name], _ = on.(bool)
+			kh, ok := v.(map[string]any)
+			if !ok {
+				return o, fmt.Errorf("compileOption knownHelpers: want object, got %T", v)
+			}
+			for name, on := range kh {
+				if o.KnownHelpers[name], ok = on.(bool); !ok {
+					return o, fmt.Errorf("compileOption knownHelpers.%s: want bool, got %T", name, on)
+				}
 			}
 		case "knownHelpersOnly":
 			o.KnownHelpersOnly = b
@@ -274,10 +283,10 @@ func buildOptions(t *testing.T, co map[string]any) Options {
 		case "trackIds":
 			o.TrackIDs = b
 		default:
-			t.Fatalf("unknown compileOption %q", k)
+			return o, fmt.Errorf("unknown compileOption %q", k)
 		}
 	}
-	return o
+	return o, nil
 }
 
 type specStatus int
@@ -300,7 +309,7 @@ func decodeResolved(raw []byte) (any, error) {
 	return resolveCode(v)
 }
 
-func runRender(t *testing.T, tc specTest) (specStatus, string) {
+func runRender(tc specTest) (specStatus, string) {
 	data, err := decodeResolved(tc.Data)
 	if err != nil {
 		return failOrSkip(err)
@@ -328,7 +337,11 @@ func runRender(t *testing.T, tc specTest) (specStatus, string) {
 		partials[name] = s
 	}
 
-	tpl, err := ParseWithOptions(tc.Template, buildOptions(t, tc.CompileOptions))
+	opts, err := buildOptions(tc.CompileOptions)
+	if err != nil {
+		return specFail, err.Error()
+	}
+	tpl, err := ParseWithOptions(tc.Template, opts)
 	if err != nil {
 		return expectErr(tc, err)
 	}
@@ -511,7 +524,7 @@ func TestSpecRender(t *testing.T) {
 		readSpec(t, p, &tests)
 		runSpecFile(t, filepath.Base(p), len(tests),
 			func(i int) string { return tests[i].Description + "/" + tests[i].It },
-			func(i int) (specStatus, string) { return runRender(t, tests[i]) })
+			func(i int) (specStatus, string) { return runRender(tests[i]) })
 	}
 }
 
