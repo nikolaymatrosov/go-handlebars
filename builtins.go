@@ -169,7 +169,8 @@ func logLevel(v any) (float64, bool) {
 
 // eachRun is the state of one {{#each}}: a single data frame and block
 // param slice are overwritten by every iteration, so nothing is allocated
-// per item. Nothing may retain them past the iteration.
+// per item (but trackIds' item path). Nothing may retain them past the
+// iteration.
 type eachRun struct {
 	o     *HelperOptions
 	frame *dataFrame
