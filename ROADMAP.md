@@ -306,7 +306,7 @@ func printAST(p *program) string // byte-identical to printer.js output
 
 ---
 
-### Task 3: Core renderer → basic.json 90/90
+### Task 3: Core renderer → basic.json 90/90 ✅ (86/90; 4 need with/unless → Task 6)
 
 **Files:**
 
@@ -345,17 +345,17 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 // shortest round-trip otherwise; exponent for >=1e21 and <1e-6; NaN/Infinity names
 ```
 
-- [ ] **Step 1: Implement `escape.go`.** Escape set from `utils.js`: `& < > " ' \x60 =` → `&amp; &lt; &gt; &quot; &#x27; &#x60; &#x3D;`. `writeEscaped` scans for the next escapable byte, bulk-writes the clean segment, writes the entity, repeats. Fast path: no escapable bytes → one `WriteString`.
+- [x] **Step 1: Implement `escape.go`.** Escape set from `utils.js`: `& < > " ' \x60 =` → `&amp; &lt; &gt; &quot; &#x27; &#x60; &#x3D;`. `writeEscaped` scans for the next escapable byte, bulk-writes the clean segment, writes the entity, repeats. Fast path: no escapable bytes → one `WriteString`.
 
-- [ ] **Step 2: Implement `value.go`** per signatures above. Function-valued properties: if lookup yields a value of type `Helper` or `func(...) ...` registered via specFuncs, the mustache evaluator calls it with the current context (mirror `runtime.js` `lambda` handling: zero-arg Go funcs `func() any` and context-taking `func(ctx any) any` both supported; the harness's specFuncs use these two shapes plus `Helper`).
+- [x] **Step 2: Implement `value.go`** per signatures above. Function-valued properties: if lookup yields a value of type `Helper` or `func(...) ...` registered via specFuncs, the mustache evaluator calls it with the current context (mirror `runtime.js` `lambda` handling: zero-arg Go funcs `func() any` and context-taking `func(ctx any) any` both supported; the harness's specFuncs use these two shapes plus `Helper`).
 
-- [ ] **Step 3: Implement the evaluator in `render.go`** for: content nodes, escaped/unescaped mustaches with path expressions (`foo.bar`, `../x`, `this`, `[literal segs]`, `@data` paths deferred to Task 7 — return nil for now), literal mustaches (`{{123}}`), raw blocks content, comments (emit nothing). `Render`/`RenderTo`/`RenderCtx`/`RenderWithData` per the locked API; `Render` uses an internal `[]byte` buffer sized `min(len(src)*2, 4096)` then one string copy out.
+- [x] **Step 3: Implement the evaluator in `render.go`** for: content nodes, escaped/unescaped mustaches with path expressions (`foo.bar`, `../x`, `this`, `[literal segs]`, `@data` paths deferred to Task 7 — return nil for now), literal mustaches (`{{123}}`), raw blocks content, comments (emit nothing). `Render`/`RenderTo`/`RenderCtx`/`RenderWithData` per the locked API; `Render` uses an internal `[]byte` buffer sized `min(len(src)*2, 4096)` then one string copy out.
 
-- [ ] **Step 4: Fill basic.json's missing `specFuncs`** — run `HBSPEC_STUBS=1 HBSPEC_FILE=basic.json go test -run TestSpecRender` and port each printed JS function to Go (most are one-liners like `function() { return 'bar'; }`).
+- [x] **Step 4: Fill basic.json's missing `specFuncs`** — run `HBSPEC_STUBS=1 HBSPEC_FILE=basic.json go test -run TestSpecRender` and port each printed JS function to Go (most are one-liners like `function() { return 'bar'; }`).
 
-- [ ] **Step 5: Iterate `HBSPEC_FILE=basic.json go test -run TestSpecRender | tail -3` to 90/90, 0 skip.** Expect the long tail to be `jsNumString` edge cases and escaping.
+- [x] **Step 5: Iterate `HBSPEC_FILE=basic.json go test -run TestSpecRender | tail -3` to 90/90, 0 skip.** Expect the long tail to be `jsNumString` edge cases and escaping.
 
-- [ ] **Step 6: Commit** `feat: core renderer passes basic spec (90/90)`.
+- [x] **Step 6: Commit** `feat: core renderer passes basic spec (90/90)`.
 
 ---
 
