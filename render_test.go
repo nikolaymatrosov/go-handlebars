@@ -550,6 +550,7 @@ func TestSparseHoles(t *testing.T) {
 	for src, want := range map[string]string{
 		`{{#each a}}{{@index}}{{.}}{{@last}}{{/each}}`: "1foofalse3bartrue",
 		`{{a}}`:                          ",foo,,bar",
+		`{{#each a}}{{@first}}{{/each}}`: "falsefalse",
 		`{{a.length}}{{a.[0]}}{{a.[1]}}`: "4foo",
 	} {
 		tpl, perr := Parse(src)
