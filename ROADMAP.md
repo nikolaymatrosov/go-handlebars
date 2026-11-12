@@ -430,7 +430,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 7: @data semantics → data.json 22/22 ✅ (21/22; 1 partials test → Task 9)
+### Task 7: @data semantics → data.json 22/22 ✅ (22/22 after Task 9)
 
 **Files:**
 
@@ -455,7 +455,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 9: Partials → partials.json 61/61
+### Task 9: Partials → partials.json 61/61 ✅
 
 **Files:**
 
@@ -467,11 +467,11 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 - Produces: resolution order (inline partials from enclosing blocks → registered partials); dynamic partials `{{> (expr)}}`; custom context `{{> p ctx}}` and hash → context merge (hash-only → hash as context extension, `ExplicitPartialContext` forces hash/explicit only); partial blocks `{{#> p}}fallback{{/p}}` with `@partial-block`; inline partials `{{#*inline "name"}}` (store program in render-state scope chain — this is the one decorator the core needs; generic decorators are Task 10); failover error `The partial <name> could not be found`; indentation: each line of partial output indented by `partialNode.indent` unless `PreventIndent` — implement in `outWriter` as an active-indent mode (scan written chunks for `\n`, inject indent; no string rebuild).
 - **Security:** every partial expansion does `s.depth++` + check — this is the recursive-partial bomb guard; add `s.step()` too.
 
-- [ ] **Step 1:** Implement static/dynamic/context/hash resolution + missing-partial error.
-- [ ] **Step 2:** Partial blocks + `@partial-block` (nested: each block pushes a frame var).
-- [ ] **Step 3:** Inline partials incl. shadowing rules; `Compat` partial tests (4).
-- [ ] **Step 4:** Indentation + `PreventIndent` (1 test) + standalone partial indent capture from Task 2.
-- [ ] **Step 5:** Run partials.json to **61/61**; full-suite regression check. Commit `feat: partials (61/61)`.
+- [x] **Step 1:** Implement static/dynamic/context/hash resolution + missing-partial error.
+- [x] **Step 2:** Partial blocks + `@partial-block` (nested: each block pushes a frame var).
+- [x] **Step 3:** Inline partials incl. shadowing rules; `Compat` partial tests (4).
+- [x] **Step 4:** Indentation + `PreventIndent` (1 test) + standalone partial indent capture from Task 2.
+- [x] **Step 5:** Run partials.json to **61/61**; full-suite regression check. Commit `feat: partials (61/61)`.
 
 ---
 
