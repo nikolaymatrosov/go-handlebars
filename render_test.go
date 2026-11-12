@@ -137,6 +137,10 @@ func TestRenderBlockParams(t *testing.T) {
 		{"{{#bp as |a|}}{{/bp}}{{a}}", "ctx"}, // out of scope
 		{"{{#bp as |a|}}{{this.a}}{{/bp}}", "ctx"},
 		{"{{#bp as |a b c|}}[{{c}}]{{/bp}}", "[]"},
+		// chained else: the wrapper inverse program is a frame; o is 2 levels out
+		// ('a' is declared on the sibling program, so it is a context lookup).
+		{"{{#bp as |o|}}{{#bpi as |a|}}x{{else bp as |b|}}{{o}}{{b}}{{a}}{{/bpi}}{{/bp}}", "AActx"},
+		{"{{#bp as |o|}}{{#bpi as |a|}}x{{else bp as |b|}}{{#with2}}{{o}}{{b}}{{/with2}}{{/bpi}}{{/bp}}", "AA"},
 	}
 	for _, c := range cases {
 		tpl, err := Parse(c.src)
@@ -144,6 +148,7 @@ func TestRenderBlockParams(t *testing.T) {
 			t.Fatal(c.src, err)
 		}
 		tpl.RegisterHelper("bp", bp)
+		tpl.RegisterHelper("bpi", func(o *HelperOptions) (any, error) { return nil, o.s.renderProgram(o.inverse, o.Ctx()) })
 		tpl.RegisterHelper("with2", func(o *HelperOptions) (any, error) { return nil, o.s.renderProgram(o.fn, o.Ctx()) })
 		if got, err := tpl.Render(map[string]any{"a": "ctx"}); err != nil || got != c.want {
 			t.Errorf("%s = %q, %v; want %q", c.src, got, err, c.want)
