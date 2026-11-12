@@ -502,13 +502,13 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 12: Adversarial security tests + fuzzing
+### Task 12: Adversarial security tests + fuzzing ✅
 
 **Files:**
 
 - Create: `limits_test.go`, `fuzz_test.go`
 
-- [ ] **Step 1: Write the limit tests** (the spec corpus does not cover limits — these are mandatory hand-written tests):
+- [x] **Step 1: Write the limit tests** (the spec corpus does not cover limits — these are mandatory hand-written tests):
 
 ```go
 func TestLimitParseDepth(t *testing.T) {
@@ -542,7 +542,7 @@ func TestRenderCtxCancel(t *testing.T) { /* canceled context -> ctx.Err() surfac
 func TestLimitErrorsNotSwallowed(t *testing.T) { /* LimitError inside helper Fn() must abort the whole render, errors.As from Render */ }
 ```
 
-- [ ] **Step 2: Fuzzing.**
+- [x] **Step 2: Fuzzing.**
 
 ```go
 func FuzzParse(f *testing.F) {
@@ -558,7 +558,7 @@ func FuzzParse(f *testing.F) {
 
 Run `go test -fuzz=FuzzParse -fuzztime=120s` and fix every panic/hang found (commit repro seeds into `testdata/fuzz/`). Then a `FuzzRender` variant fuzzing the data side (JSON-decode the fuzz bytes into data for a fixed set of spec templates).
 
-- [ ] **Step 3: Commit** `test: adversarial limit tests + fuzzing`.
+- [x] **Step 3: Commit** `test: adversarial limit tests + fuzzing`.
 
 ---
 
