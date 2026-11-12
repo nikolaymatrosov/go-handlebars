@@ -444,14 +444,14 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 8: Subexpressions → subexpressions.json 16/18 (2 stringParams skips)
+### Task 8: Subexpressions → subexpressions.json 16/18 (2 stringParams skips) ✅
 
 **Files:**
 
 - Modify: `render.go`/`helpers.go` (evaluate `subExpr` params: inner helper call whose return value becomes the arg; nested depth counts toward `MaxRenderDepth` via `s.depth`), `spec_funcs_test.go`
 
-- [ ] **Step 1:** Implement `evalExpr` for `subExpr` (always a helper call — unknown name → `helperMissing`, matching JS behavior incl. its error `"<name> doesn't match <other>"`-style messages in corpus).
-- [ ] **Step 2:** Run to **16 pass / 2 skip (stringParams) / 0 fail**. Commit `feat: subexpressions (16/18)`.
+- [x] **Step 1:** Implement `evalExpr` for `subExpr` (always a helper call — unknown name → `helperMissing`, matching JS behavior incl. its error `"<name> doesn't match <other>"`-style messages in corpus).
+- [x] **Step 2:** Run to **16 pass / 2 skip (stringParams) / 0 fail**. Commit `feat: subexpressions (16/18)`.
 
 ---
 
