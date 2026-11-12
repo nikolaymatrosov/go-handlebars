@@ -306,7 +306,7 @@ func printAST(p *program) string // byte-identical to printer.js output
 
 ---
 
-### Task 3: Core renderer → basic.json 90/90 ✅ (86/90; 4 need with/unless → Task 6)
+### Task 3: Core renderer → basic.json 90/90 ✅ (90/90 after Task 6)
 
 **Files:**
 
@@ -359,7 +359,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 4: Blocks → blocks.json 31/39 (all except 8 decorator tests) ✅ (23/39; 8 need builtins/@data → T6/T7, 8 decorators → T10)
+### Task 4: Blocks → blocks.json 31/39 (all except 8 decorator tests) ✅ (31/39 after Task 6; 8 decorators → Task 10)
 
 **Files:**
 
@@ -383,7 +383,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 5: Helpers API → helpers.json green except stringParams/trackIds/knownHelpers edge set ✅ (75/87; 12 need if/unless/with → Task 6)
+### Task 5: Helpers API → helpers.json green except stringParams/trackIds/knownHelpers edge set ✅ (87/87 after Task 6)
 
 **Files:**
 
@@ -407,7 +407,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 6: Builtins + data frames → builtins.json 42/42
+### Task 6: Builtins + data frames → builtins.json 42/42 ✅
 
 **Files:**
 
@@ -420,13 +420,13 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 - Produces: default registry (every new Template gets it; user registrations shadow): `each` (arrays, KeyedCollection in Keys() order, plain maps in sorted-key order, sets `@index @key @first @last`, block params `|value key|`), `if`/`unless` (`includeZero` hash), `with` (context push + block param + else), `lookup` (safe, uses `lookupProperty`), `log` (writes to a `Logger func(level string, args ...any)` field on Template, default no-op; `level` hash arg). Port each from `lib/handlebars/helpers/<name>.js`.
 - `dataFrame`: created by `each` iterations (`createFrame` semantics: copy-on-write child of parent frame; `@../index` reaches parent frame via `pathExpr.depth` on data paths).
 
-- [ ] **Step 1: Implement dataFrame + `@` path evaluation** in `render.go` (pathExpr with `data=true`: resolve from current frame, `depth` walks parent frames).
+- [x] **Step 1: Implement dataFrame + `@` path evaluation** in `render.go` (pathExpr with `data=true`: resolve from current frame, `depth` walks parent frames).
 
-- [ ] **Step 2: Implement the six builtins** with `FnTo` (no intermediate strings), `s.step()` per iteration.
+- [x] **Step 2: Implement the six builtins** with `FnTo` (no intermediate strings), `s.step()` per iteration.
 
-- [ ] **Step 3: Port remaining specFuncs for builtins.json; run to 42/42.** Prior files stay green.
+- [x] **Step 3: Port remaining specFuncs for builtins.json; run to 42/42.** Prior files stay green.
 
-- [ ] **Step 4: Commit** `feat: builtin helpers + data frames (builtins 42/42)`.
+- [x] **Step 4: Commit** `feat: builtin helpers + data frames (builtins 42/42)`.
 
 ---
 
