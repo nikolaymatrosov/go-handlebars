@@ -182,7 +182,7 @@ type KeyedCollection interface {
 
 ---
 
-### Task 0: Repo bootstrap + spec harness
+### Task 0: Repo bootstrap + spec harness ✅
 
 **Files:**
 
@@ -194,9 +194,9 @@ type KeyedCollection interface {
 - Produces: `specTest` struct, `omap` ordered map (implements `KeyedCollection`), `specFuncs map[string]any` registry, test entry points `TestSpecTokenizer`, `TestSpecParser`, `TestSpecRender`.
 - The harness is the project's test suite; later tasks only add entries to `specFuncs` and flip expected pass counts.
 
-- [ ] **Step 1: `go mod init github.com/nikthespirit/go-handlebars`** (adjust path if the repo gets a different remote later).
+- [x] **Step 1: `go mod init github.com/nikthespirit/go-handlebars`** (adjust path if the repo gets a different remote later).
 
-- [ ] **Step 2: Write the harness.** Core pieces that must exist exactly:
+- [x] **Step 2: Write the harness.** Core pieces that must exist exactly:
 
 ```go
 // spec_test.go
@@ -237,15 +237,15 @@ func resolveCode(v any) (any, error)
 
 Runner logic per render test: `decodeOrdered` data → `resolveCode` → build `Options` from `compileOptions` → `ParseWithOptions` → register partials (recursively via `RegisterPartial`) and helpers (from resolved `Helpers` map) → `RenderWithData` into `strings.Builder` → compare with `*Expected`. If `Exception`: require non-nil error; if `Message` non-empty, require `msgMatch(err, test.Message)` where `msgMatch` consults a normalization table `msgAliases map[string]string` (JS message → acceptable Go message or prefix) and otherwise does exact compare. Filters: env `HBSPEC_FILE` (file basename), `HBSPEC_IT` (substring of `description/it`). `HBSPEC_STUBS=1` prints missing `specFuncs` stubs. Final line per file: `basic.json: 0/90 pass, 0 fail, 90 skip` style summary; a test for a not-yet-implemented area counts FAIL (not skip) — only missing `specFuncs` entries produce SKIP.
 
-- [ ] **Step 3: Stub `handlebars.go`** with the full locked API above, all bodies `return nil, errors.New("not implemented")` (or no-ops), so the harness compiles.
+- [x] **Step 3: Stub `handlebars.go`** with the full locked API above, all bodies `return nil, errors.New("not implemented")` (or no-ops), so the harness compiles.
 
-- [ ] **Step 4: Run `go test ./... 2>&1 | tail -20`** — expect compilation OK, all 632 tests failing/skipping with per-file summaries printed.
+- [x] **Step 4: Run `go test ./... 2>&1 | tail -20`** — expect compilation OK, all 632 tests failing/skipping with per-file summaries printed.
 
-- [ ] **Step 5: Commit** `feat: spec harness, locked public API, limits types`.
+- [x] **Step 5: Commit** `feat: spec harness, locked public API, limits types`.
 
 ---
 
-### Task 1: Lexer → tokenizer.json 78/78
+### Task 1: Lexer → tokenizer.json 78/78 ✅
 
 **Files:**
 
@@ -256,16 +256,16 @@ Runner logic per render test: `decodeOrdered` data → `resolveCode` → build `
 - Produces: `type tokenKind uint8` with `String()` returning handlebars.js names; `type token struct { kind tokenKind; text string; line, col int }`; `func lex(src string, limits Limits) ([]token, error)`.
 - Consumes: `Limits` from Task 0.
 
-- [ ] **Step 1: Derive the exact token-name set from the corpus** (don't guess):
+- [x] **Step 1: Derive the exact token-name set from the corpus** (don't guess):
   `python3 -c "import json;print(sorted({tok['name'] for t in json.load(open('handlebars-spec/spec/tokenizer.json')) for tok in t['expected']}))"`
 
-- [ ] **Step 2: Port the scanner from `handlebars-spec/handlebars.js/src/handlebars.l`.** It is a small flex grammar (~60 rules) with two states (`mu` inside mustaches, `raw` inside `{{{{raw}}}}` blocks). Hand-write it as a state machine over `src` by index; token `text` is a subslice of `src` (no copies) except where the grammar transforms text (e.g. `\\{{` escapes, quoted strings strip quotes and unescape `\"`). Enforce `MaxTemplateSize` at the top of `lex`.
+- [x] **Step 2: Port the scanner from `handlebars-spec/handlebars.js/src/handlebars.l`.** It is a small flex grammar (~60 rules) with two states (`mu` inside mustaches, `raw` inside `{{{{raw}}}}` blocks). Hand-write it as a state machine over `src` by index; token `text` is a subslice of `src` (no copies) except where the grammar transforms text (e.g. `\\{{` escapes, quoted strings strip quotes and unescape `\"`). Enforce `MaxTemplateSize` at the top of `lex`.
 
-- [ ] **Step 3: Wire `TestSpecTokenizer`** to call `lex` and compare `[]{name,text}`.
+- [x] **Step 3: Wire `TestSpecTokenizer`** to call `lex` and compare `[]{name,text}`.
 
-- [ ] **Step 4: Run `HBSPEC_FILE=tokenizer.json go test -run TestSpecTokenizer -v | tail -5`** — iterate until **78/78 pass**.
+- [x] **Step 4: Run `HBSPEC_FILE=tokenizer.json go test -run TestSpecTokenizer -v | tail -5`** — iterate until **78/78 pass**.
 
-- [ ] **Step 5: Commit** `feat: lexer passes tokenizer spec (78/78)`.
+- [x] **Step 5: Commit** `feat: lexer passes tokenizer spec (78/78)`.
 
 ---
 
