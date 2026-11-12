@@ -130,7 +130,9 @@ func (t *Template) Render(data any) (string, error) {
 	return string(out.buf), nil
 }
 
-func (t *Template) RenderTo(w io.Writer, data any) error { return t.renderTo(context.Background(), w, data) }
+func (t *Template) RenderTo(w io.Writer, data any) error {
+	return t.renderTo(context.Background(), w, data)
+}
 
 // RenderCtx checks ctx.Err() every 1024 ops; rendering is otherwise identical.
 func (t *Template) RenderCtx(ctx context.Context, w io.Writer, data any) error {
