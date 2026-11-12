@@ -269,7 +269,7 @@ Runner logic per render test: `decodeOrdered` data → `resolveCode` → build `
 
 ---
 
-### Task 2: AST + parser + whitespace control → parser.json 79/79
+### Task 2: AST + parser + whitespace control → parser.json 79/79 ✅
 
 **Files:**
 
@@ -292,17 +292,17 @@ func parse(src string, opts Options) (*program, error)
 func printAST(p *program) string // byte-identical to printer.js output
 ```
 
-- [ ] **Step 1: Define AST mirroring `handlebars.yy` productions** (MustacheStatement, BlockStatement, PartialStatement, PartialBlockStatement, DecoratorBlock, ContentStatement, CommentStatement, SubExpression, PathExpression, Hash, literals, `blockParams` as `as |a b|`).
+- [x] **Step 1: Define AST mirroring `handlebars.yy` productions** (MustacheStatement, BlockStatement, PartialStatement, PartialBlockStatement, DecoratorBlock, ContentStatement, CommentStatement, SubExpression, PathExpression, Hash, literals, `blockParams` as `as |a b|`).
 
-- [ ] **Step 2: Port `printer.js` as `printAST`** — this is the oracle for parser.json. Examples from corpus: `{{foo}}` → `"{{ PATH:foo [] }}\n"`, `{{123}}` → `"{{ NUMBER{123} [] }}\n"`. Match it byte-for-byte including depth padding.
+- [x] **Step 2: Port `printer.js` as `printAST`** — this is the oracle for parser.json. Examples from corpus: `{{foo}}` → `"{{ PATH:foo [] }}\n"`, `{{123}}` → `"{{ NUMBER{123} [] }}\n"`. Match it byte-for-byte including depth padding.
 
-- [ ] **Step 3: Write the recursive-descent parser** over `lex` output, porting the grammar semantics in `handlebars.yy` plus the AST-building helpers in `lib/handlebars/compiler/helpers.js` (`prepareBlock`, `preparePath` — path depth `../` handling, `this`/`[seg]` parts, "Invalid path" errors), with a `depth int` guard against `MaxParseDepth` (increment on block open, subexpression, partial block). Error text format: `Parse error on line N: ...` (see `parser-prefix.js` / spec `message` fields for exact strings; add `msgAliases` entries when exact Jison "Expecting ..." lists are impractical — but prefer exact).
+- [x] **Step 3: Write the recursive-descent parser** over `lex` output, porting the grammar semantics in `handlebars.yy` plus the AST-building helpers in `lib/handlebars/compiler/helpers.js` (`prepareBlock`, `preparePath` — path depth `../` handling, `this`/`[seg]` parts, "Invalid path" errors), with a `depth int` guard against `MaxParseDepth` (increment on block open, subexpression, partial block). Error text format: `Parse error on line N: ...` (see `parser-prefix.js` / spec `message` fields for exact strings; add `msgAliases` entries when exact Jison "Expecting ..." lists are impractical — but prefer exact).
 
-- [ ] **Step 4: Port `whitespace-control.js`** as an AST pass run inside `parse`: tilde `~` strips (`strip.open/close`), standalone-line detection/removal for blocks, comments, partials; `Options.IgnoreStandalone` disables the standalone part. Note `preventIndent`/partial indent capture happens here (`partialNode.indent`).
+- [x] **Step 4: Port `whitespace-control.js`** as an AST pass run inside `parse`: tilde `~` strips (`strip.open/close`), standalone-line detection/removal for blocks, comments, partials; `Options.IgnoreStandalone` disables the standalone part. Note `preventIndent`/partial indent capture happens here (`partialNode.indent`).
 
-- [ ] **Step 5: Run `HBSPEC_FILE=parser.json go test -run TestSpecParser | tail -3`** — iterate to **79/79**. Tokenizer must stay 78/78.
+- [x] **Step 5: Run `HBSPEC_FILE=parser.json go test -run TestSpecParser | tail -3`** — iterate to **79/79**. Tokenizer must stay 78/78.
 
-- [ ] **Step 6: Commit** `feat: parser + whitespace control pass parser spec (79/79)`.
+- [x] **Step 6: Commit** `feat: parser + whitespace control pass parser spec (79/79)`.
 
 ---
 
