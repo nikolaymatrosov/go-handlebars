@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -43,7 +44,7 @@ var specGate = map[string]int{
 	"data.json":               22,
 	"helpers.json":            87,
 	"partials.json":           61,
-	"regressions.json":        32,
+	"regressions.json":        33,
 	"strict.json":             22,
 	"string-params.json":      0,
 	"subexpressions.json":     16,
@@ -199,6 +200,17 @@ func resolveWalk(v any, skip *errSkip) any {
 			}
 			skip.missing = append(skip.missing, missingCode{h, js})
 			return nil
+		}
+		if x.m["!sparsearray"] == true {
+			n, _ := x.m["!length"].(float64)
+			out := make([]any, int(n))
+			for i := range out {
+				out[i] = hole{}
+				if e, ok := x.m[strconv.Itoa(i)]; ok {
+					out[i] = resolveWalk(e, skip)
+				}
+			}
+			return out
 		}
 		out := &omap{m: map[string]any{}}
 		for _, k := range x.keys {

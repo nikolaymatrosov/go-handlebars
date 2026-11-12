@@ -165,18 +165,18 @@ type eachRun struct {
 	n     int
 }
 
-func (r *eachRun) iter(v any, key string, arr, last bool) error {
+func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
 	s := r.o.s
 	if err := s.step(); err != nil {
 		return err
 	}
 	if f := r.frame; f != nil {
-		f.key, f.arr, f.index, f.first, f.last = key, arr, r.n, r.n == 0, last
+		f.key, f.arr, f.index, f.first, f.last = key, arr, idx, r.n == 0, last
 	}
 	if r.bp != nil {
 		r.bp[0] = v
 		if arr {
-			r.bp[1] = r.n
+			r.bp[1] = idx
 		} else {
 			r.bp[1] = key
 		}
@@ -214,11 +214,14 @@ func eachHelper(o *HelperOptions) (any, error) {
 // forOwn visits the own enumerable properties of ctx in JS order, as
 // {{#each}} and Utils.extend see them: array items (key "", arr true),
 // object keys (KeyedCollection order, maps sorted, struct fields).
-func forOwn(ctx any, visit func(v any, key string, arr, last bool) error) error {
+func forOwn(ctx any, visit func(v any, key string, idx int, arr, last bool) error) error {
 	switch x := ctx.(type) {
 	case []any:
 		for i, v := range x {
-			if err := visit(v, "", true, i == len(x)-1); err != nil {
+			if v == (hole{}) {
+				continue
+			}
+			if err := visit(v, "", i, true, i == len(x)-1); err != nil {
 				return err
 			}
 		}
@@ -238,7 +241,7 @@ func forOwn(ctx any, visit func(v any, key string, arr, last bool) error) error 
 	switch rv.Kind() {
 	case reflect.Slice, reflect.Array:
 		for i, n := 0, rv.Len(); i < n; i++ {
-			if err := visit(rv.Index(i).Interface(), "", true, i == n-1); err != nil {
+			if err := visit(rv.Index(i).Interface(), "", i, true, i == n-1); err != nil {
 				return err
 			}
 		}
@@ -266,9 +269,9 @@ func forOwn(ctx any, visit func(v any, key string, arr, last bool) error) error 
 	return nil
 }
 
-func visitKeys(keys []string, get func(string) any, visit func(v any, key string, arr, last bool) error) error {
+func visitKeys(keys []string, get func(string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
 	for i, k := range keys {
-		if err := visit(get(k), k, false, i == len(keys)-1); err != nil {
+		if err := visit(get(k), k, i, false, i == len(keys)-1); err != nil {
 			return err
 		}
 	}

@@ -530,3 +530,34 @@ func TestStrictAssumeObjectsTable(t *testing.T) {
 		}
 	}
 }
+
+// Task 10c: an inline partial captured no depths, so JS depths[0] is
+// undefined (not null) and nullContext is still pushed: ../. is the object.
+func TestNullCtxEmptyDepths(t *testing.T) {
+	tpl, err := Parse(`{{#*inline "row"}}{{#if 1}}{{#with @root.x}}[{{../.}}]{{/with}}{{/if}}{{/inline}}{{> row nope}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := tpl.Render(map[string]any{"x": map[string]any{}})
+	if want := "[[object Object]]"; got != want || err != nil {
+		t.Errorf("got %q, %v; want %q", got, err, want)
+	}
+}
+
+// Sparse []any: holes are skipped by each, invisible to lookup, empty in join.
+func TestSparseHoles(t *testing.T) {
+	arr := []any{hole{}, "foo", hole{}, "bar"}
+	for src, want := range map[string]string{
+		`{{#each a}}{{@index}}{{.}}{{@last}}{{/each}}`: "1foofalse3bartrue",
+		`{{a}}`:                          ",foo,,bar",
+		`{{a.length}}{{a.[0]}}{{a.[1]}}`: "4foo",
+	} {
+		tpl, perr := Parse(src)
+		if perr != nil {
+			t.Fatal(perr)
+		}
+		if got, err := tpl.Render(map[string]any{"a": arr}); got != want || err != nil {
+			t.Errorf("%s = %q, %v; want %q", src, got, err, want)
+		}
+	}
+}

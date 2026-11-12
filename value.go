@@ -20,6 +20,13 @@ const maxValueDepth = 64
 // the current context is null/undefined (an empty object).
 type nullCtx struct{}
 
+// hole is a missing element of a sparse []any (JS `i in arr` false). Only
+// test harnesses create it; each skips it, lookup yields undefined, join
+// renders it empty.
+// ponytail: sentinel in []any instead of a sparse type; holes inside other
+// slice types are not modelled.
+type hole struct{}
+
 // asHelper reports whether v is a callable function value (JS typeof v ===
 // 'function'). The only function shape is Helper.
 func asHelper(v any) (Helper, bool) {
@@ -143,7 +150,7 @@ func lookupProperty(parent any, name string) (any, bool) {
 		if name == "length" {
 			return len(p), true
 		}
-		if i, ok := arrayIndex(name, len(p)); ok {
+		if i, ok := arrayIndex(name, len(p)); ok && p[i] != (hole{}) {
 			return p[i], true
 		}
 		return nil, false
@@ -295,6 +302,9 @@ func appendReflect(dst []byte, rv reflect.Value, escape bool, limit, depth int) 
 		}
 		return append(dst, "[object Object]"...)
 	case reflect.Struct:
+		if rv.Type() == reflect.TypeOf(hole{}) {
+			return dst
+		}
 		return append(dst, "[object Object]"...)
 	}
 	return dst // funcs, chans: no JS equivalent worth printing
