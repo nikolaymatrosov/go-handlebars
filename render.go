@@ -444,12 +444,13 @@ func (s *renderState) lookupStrict(p *pathExpr, ctx any, terminal bool) (any, er
 	if p.data && i == 0 {
 		switch {
 		case terminal && n == 0:
-			if f != nil {
-				if w, ok := f.get(parts[0]); ok {
-					return w, nil
-				}
+			if f == nil {
+				return nil, strictErr(p, nil, parts[0])
 			}
-			return nil, strictErr(p, nil, parts[0])
+			if w, ok := f.get(parts[0]); ok {
+				return w, nil
+			}
+			return nil, strictErr(p, f, parts[0]) // JS passes the data object
 		case f == nil:
 			return nil, typeErr(parts[0])
 		}

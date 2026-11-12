@@ -446,3 +446,48 @@ func TestStrictErrorLocation(t *testing.T) {
 		t.Fatalf("got %v, want %s", err, want)
 	}
 }
+
+type nilKC struct{}
+
+func (*nilKC) Keys() []string         { return nil }
+func (*nilKC) Get(string) (any, bool) { return nil, false }
+func (*nilKC) Len() int               { return 0 }
+
+func TestStrictAssumeObjectsTable(t *testing.T) {
+	type S struct{ B int }
+	tp := func(src string, o Options) *Template {
+		tpl, err := ParseWithOptions(src, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tpl
+	}
+	partial := tp("{{x}}", Options{Strict: true})
+	cases := []struct {
+		name  string
+		tpl   *Template
+		data  any
+		want  string // output, or error text when isErr
+		isErr bool
+	}{
+		{"assume nil intermediate", tp("{{a.b.c}}", Options{AssumeObjects: true}), map[string]any{"a": nil}, "Cannot read properties of undefined (reading 'b')", true},
+		{"assume typed-nil pointer", tp("{{a.B}}", Options{AssumeObjects: true}), map[string]any{"a": (*S)(nil)}, "Cannot read properties of undefined (reading 'B')", true},
+		{"assume typed-nil KeyedCollection", tp("{{a.b}}", Options{AssumeObjects: true}), map[string]any{"a": (*nilKC)(nil)}, "Cannot read properties of undefined (reading 'b')", true},
+		{"assume ok", tp("{{a.b}}", Options{AssumeObjects: true}), map[string]any{"a": map[string]any{}}, "", false},
+		{"strict missing @var", tp("{{@foo}}", Options{Strict: true}), map[string]any{}, `"foo" not defined in [object Object] - 1:2`, true},
+		{"strict partial own options", func() *Template {
+			t := tp("{{> p}}", Options{})
+			t.RegisterPartialTemplate("p", partial)
+			return t
+		}(), map[string]any{}, `"x" not defined in [object Object] - 1:2`, true},
+	}
+	for _, c := range cases {
+		got, err := c.tpl.Render(c.data)
+		switch {
+		case c.isErr && (err == nil || err.Error() != c.want):
+			t.Errorf("%s: got %q, %v; want error %q", c.name, got, err, c.want)
+		case !c.isErr && (err != nil || got != c.want):
+			t.Errorf("%s: got %q, %v; want %q", c.name, got, err, c.want)
+		}
+	}
+}
