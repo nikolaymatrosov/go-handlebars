@@ -71,7 +71,11 @@ type renderState struct {
 	out    *outWriter // current sink; renderString swaps in a sub-writer
 	depths []any      // JS depths, innermost last: JS depths[n] is depths[len-1-n]
 	depth  int        // nested block programs (partials will count too)
-	ops    int
+	// bps is the runtime.js blockParams chain: one frame per program being
+	// rendered, innermost last (nil when the caller passed none). A path with
+	// pathExpr.bp set reads bps[len-1-bpDepth][bpIdx].
+	bps [][]any
+	ops int
 	// emitted is the output byte count every outWriter of this render shares.
 	emitted int
 	limits  Limits
@@ -109,6 +113,12 @@ func (s *renderState) step() error {
 // runtime.js wrapProgram closure: ctx becomes the new depths[0] unless it
 // equals the current one. Nesting is bounded by MaxRenderDepth.
 func (s *renderState) renderProgram(p *program, ctx any) error {
+	return s.renderProgramBP(p, ctx, nil)
+}
+
+// renderProgramBP is renderProgram with the block params the caller passes
+// to the program (JS options.fn(ctx, {blockParams})).
+func (s *renderState) renderProgramBP(p *program, ctx any, blockParams []any) error {
 	if p == nil {
 		return nil // container.noop
 	}
@@ -121,7 +131,9 @@ func (s *renderState) renderProgram(p *program, ctx any) error {
 		s.depths = append(s.depths, ctx)
 	}
 	s.depth++
+	s.bps = append(s.bps, blockParams)
 	err := s.body(p.body, ctx)
+	s.bps = s.bps[:len(s.bps)-1]
 	s.depth--
 	if push {
 		s.depths = s.depths[:len(s.depths)-1]
@@ -199,8 +211,9 @@ func (s *renderState) expr(c *call, ctx any, sub, block bool, fn, inverse *progr
 		return nil, err
 	}
 	p := callPath(c.path)
-	simpleID := len(p.parts) == 1 && !p.scoped && p.depth == 0
-	if sub || len(c.params) > 0 || c.hash != nil {
+	// A block param is never a helper (compiler.js classifySexpr).
+	simpleID := len(p.parts) == 1 && !p.scoped && p.depth == 0 && !p.bp
+	if !p.bp && (sub || len(c.params) > 0 || c.hash != nil) {
 		return s.invokeHelper(c, p, simpleID, ctx, fn, inverse)
 	}
 	if !simpleID { // resolvePossibleLambda: a function is called with `this` = ctx and no options
@@ -305,21 +318,44 @@ func (s *renderState) lookup(p *pathExpr, ctx any) any {
 	if p.data {
 		return nil // Task 7: @data
 	}
-	v := ctx
-	if p.depth > 0 {
+	v, parts := ctx, p.parts
+	switch {
+	case p.bp: // lookupBlockParam
+		v = nil
+		if i := len(s.bps) - 1 - p.bpDepth; i >= 0 && p.bpIdx < len(s.bps[i]) {
+			v = s.bps[i][p.bpIdx]
+		}
+		parts = parts[1:]
+	case p.depth > 0:
 		i := len(s.depths) - 1 - p.depth
 		if i < 0 {
 			return nil
 		}
 		v = s.depths[i]
+	case s.t.opts.Compat && !p.scoped && len(parts) > 0: // depthedLookup of the first part
+		v = s.depthedLookup(parts[0])
+		parts = parts[1:]
 	}
-	for _, part := range p.parts {
+	for _, part := range parts {
 		if v == nil {
 			return nil
 		}
 		v, _ = lookupProperty(v, part)
 	}
 	return v
+}
+
+// depthedLookup is runtime.js container.lookup (compat mode): the first
+// context, innermost out, that has a non-null property name.
+func (s *renderState) depthedLookup(name string) any {
+	for i := len(s.depths) - 1; i >= 0; i-- {
+		if d := s.depths[i]; jsTruthy(d) {
+			if v, _ := lookupProperty(d, name); !isNull(v) {
+				return v
+			}
+		}
+	}
+	return nil
 }
 
 // callPath is JS transformLiteralToPath: a literal callee ({{"foo"}},

@@ -104,6 +104,10 @@ type pathExpr struct {
 	parts    []string // segments with this/./.. removed; empty means the context itself
 	original string   // as written, with [] stripped, e.g. "../foo/bar"
 	scoped   bool     // JS AST.helpers.scopedId: original =~ /^\.|this\b/
+	// bp: parts[0] names a block param, JS blockParamIndex: bpDepth enclosing
+	// programs out, position bpIdx in its `as |...|` list.
+	bp             bool
+	bpDepth, bpIdx int
 }
 
 type (

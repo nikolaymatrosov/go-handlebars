@@ -122,3 +122,65 @@ func TestRenderLimits(t *testing.T) {
 		t.Errorf("RenderCtx on a canceled ctx = %v, want context.Canceled", err)
 	}
 }
+
+// TestRenderBlockParams drives the internal block-param path: helper "bp"
+// passes (ctx, [1, {c: "C"}]) to its block, the way builtins will.
+func TestRenderBlockParams(t *testing.T) {
+	bp := func(o *HelperOptions) (any, error) {
+		return nil, o.s.renderProgramBP(o.fn, o.Ctx(), []any{"A", map[string]any{"c": "C"}})
+	}
+	cases := []struct{ src, want string }{
+		{"{{#bp as |a b|}}{{a}}{{b.c}}{{/bp}}", "AC"},
+		{"{{#bp as |a b|}}{{#bp as |x|}}{{a}}{{x}}{{b.c}}{{/bp}}{{/bp}}", "AAC"},
+		{"{{#bp as |a|}}{{#with2}}{{a}}{{/with2}}{{/bp}}", "A"}, // plain block between: depth counts it
+		{"{{#bp as |a|}}{{#bp as |a|}}{{a}}{{/bp}}{{/bp}}", "A"},
+		{"{{#bp as |a|}}{{/bp}}{{a}}", "ctx"}, // out of scope
+		{"{{#bp as |a|}}{{this.a}}{{/bp}}", "ctx"},
+		{"{{#bp as |a b c|}}[{{c}}]{{/bp}}", "[]"},
+	}
+	for _, c := range cases {
+		tpl, err := Parse(c.src)
+		if err != nil {
+			t.Fatal(c.src, err)
+		}
+		tpl.RegisterHelper("bp", bp)
+		tpl.RegisterHelper("with2", func(o *HelperOptions) (any, error) { return nil, o.s.renderProgram(o.fn, o.Ctx()) })
+		if got, err := tpl.Render(map[string]any{"a": "ctx"}); err != nil || got != c.want {
+			t.Errorf("%s = %q, %v; want %q", c.src, got, err, c.want)
+		}
+	}
+}
+
+func TestRenderIsEmpty(t *testing.T) {
+	for v, want := range map[string]bool{"nil": true, "0": false, "empty": true, "arr0": true, "arr1": false, "map": false, "str": true, "x": false} {
+		var in any
+		switch v {
+		case "0":
+			in = 0.0
+		case "empty", "str":
+			in = ""
+		case "arr0":
+			in = []any{}
+		case "arr1":
+			in = []any{1}
+		case "map":
+			in = map[string]any{}
+		case "x":
+			in = "x"
+		}
+		if got := isEmpty(in); got != want {
+			t.Errorf("isEmpty(%s) = %v", v, got)
+		}
+	}
+	if !isEmpty(math.NaN()) || isEmpty(int8(0)) || !isEmpty(([]int)(nil)) {
+		t.Error("isEmpty NaN/int/nil slice")
+	}
+}
+
+func TestRenderCompatDepthed(t *testing.T) {
+	got := mustRender(t, Options{Compat: true}, "{{#o}}{{#i}}{{x.y}}{{this.x.y}}|{{/i}}{{/o}}", map[string]any{
+		"x": map[string]any{"y": "Y"}, "o": []any{map[string]any{"i": []any{1}}}})
+	if got != "Y|" {
+		t.Errorf("got %q", got)
+	}
+}

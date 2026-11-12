@@ -1,6 +1,7 @@
 package handlebars
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -19,7 +20,7 @@ func parse(src string, opts Options) (*program, error) {
 		toks = append(toks, token{kind: tEOF, off: len(src)}) // stands for the bad text
 	}
 	p := &parser{src: src, toks: toks, maxDepth: limits.MaxParseDepth}
-	prog, err := p.program(setOf(tEOF))
+	prog, err := p.program(setOf(tEOF), nil)
 	if lexErr != nil {
 		// JS lexes lazily and every JS error needs a lookahead token, so only
 		// errors found before reaching the bad text beat the lexical error.
@@ -39,6 +40,7 @@ type parser struct {
 	toks            []token // always ends with tEOF
 	i               int
 	depth, maxDepth int
+	bps             [][]string // blockParams of the enclosing programs, innermost last
 }
 
 // tokSet is a bitset of token kinds.
@@ -163,7 +165,9 @@ func showPosition(src string, la token) string {
 }
 
 // program parses statement* and requires the next token to be in end.
-func (p *parser) program(end tokSet) (*program, error) {
+func (p *parser) program(end tokSet, blockParams []string) (*program, error) {
+	p.bps = append(p.bps, blockParams) // JS compiler options.blockParams.unshift
+	defer func() { p.bps = p.bps[:len(p.bps)-1] }()
 	prog := &program{}
 	for stmtStart.has(p.peek().kind) {
 		n, err := p.statement()
@@ -393,7 +397,21 @@ func (p *parser) path(start token, data bool) (node, error) {
 	}
 	pe.original = orig.String()
 	pe.scoped = isScoped(pe.original)
+	if !data && pe.depth == 0 && !pe.scoped && len(pe.parts) > 0 {
+		pe.bpDepth, pe.bpIdx, pe.bp = p.blockParamIndex(pe.parts[0])
+	}
 	return pe, nil
+}
+
+// blockParamIndex is compiler.js blockParamIndex: the (program depth, index)
+// of the nearest enclosing `as |name|`, depth 0 being the innermost program.
+func (p *parser) blockParamIndex(name string) (depth, idx int, ok bool) {
+	for d := 0; d < len(p.bps); d++ {
+		if i := slices.Index(p.bps[len(p.bps)-1-d], name); i >= 0 {
+			return d, i, true
+		}
+	}
+	return 0, 0, false
 }
 
 // isScoped is JS AST.helpers.scopedId: /^\.|this\b/ on a path's original.
@@ -480,7 +498,7 @@ func (p *parser) block() (node, error) {
 	if !inverted {
 		end |= setOf(tOPEN_INVERSE_CHAIN)
 	}
-	prog, err := p.program(end)
+	prog, err := p.program(end, open.blockParams)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +539,7 @@ func (p *parser) closeBlock(openName node) (stripFlags, error) {
 // inverseAndProgram parses `{{else}}` / `{{^}}` and its program.
 func (p *parser) inverseAndProgram() (*inverseInfo, error) {
 	t := p.next()
-	prog, err := p.program(setOf(tOPEN_ENDBLOCK))
+	prog, err := p.program(setOf(tOPEN_ENDBLOCK), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -533,11 +551,14 @@ func (p *parser) inverseChain() (*inverseInfo, error) {
 	if err := p.enter(); err != nil {
 		return nil, err
 	}
+	// The chained block lives in a wrapper inverse program: one more level.
+	p.bps = append(p.bps, nil)
+	defer func() { p.bps = p.bps[:len(p.bps)-1] }()
 	open, err := p.openTag()
 	if err != nil {
 		return nil, err
 	}
-	prog, err := p.program(setOf(tINVERSE, tOPEN_INVERSE_CHAIN, tOPEN_ENDBLOCK))
+	prog, err := p.program(setOf(tINVERSE, tOPEN_INVERSE_CHAIN, tOPEN_ENDBLOCK), open.blockParams)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +668,7 @@ func (p *parser) partial() (node, error) {
 	if !isBlock {
 		return n, nil
 	}
-	if n.program, err = p.program(setOf(tOPEN_ENDBLOCK)); err != nil {
+	if n.program, err = p.program(setOf(tOPEN_ENDBLOCK), nil); err != nil {
 		return nil, err
 	}
 	if n.closeStrip, err = p.closeBlock(c.path); err != nil {

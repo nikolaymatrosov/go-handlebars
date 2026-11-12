@@ -80,6 +80,28 @@ func jsTruthy(v any) bool {
 	return true
 }
 
+// isEmpty is utils.js isEmpty: falsy values other than the number 0, and
+// empty arrays (Go slices/arrays). Maps and KeyedCollections are objects,
+// so never empty.
+func isEmpty(v any) bool {
+	if !jsTruthy(v) {
+		if isNull(v) {
+			return true
+		}
+		switch rv := reflect.ValueOf(v); rv.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return rv.Int() != 0
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return rv.Uint() != 0
+		case reflect.Float32, reflect.Float64:
+			return rv.Float() != 0 // NaN is falsy and not 0: empty
+		}
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	return (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array) && rv.Len() == 0
+}
+
 // sameContext approximates JS `a == b` as used by wrapProgram to decide
 // whether a block context becomes a new depth: null matches null, objects
 // compare by identity, primitives by value.
