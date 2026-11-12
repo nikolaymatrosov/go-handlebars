@@ -128,7 +128,7 @@ go test -run TestSpec -v . | grep -E 'json:|spec total'
 # spec total: 632/632 pass, 0 fail, 0 skip
 ```
 
-`go test ./...` fails if any spec file drops below its pass gate.
+`go test ./...` fails if any spec file drops below its pass gate. Without the submodule, as in a module download, the spec tests skip.
 
 ## Concurrency
 

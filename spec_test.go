@@ -452,13 +452,22 @@ func matchException(want any, err error) (specStatus, string) {
 	return specPass, ""
 }
 
-func specFiles(t *testing.T, kind func(name string) bool) []string {
-	paths, err := filepath.Glob("handlebars-spec/spec/*.json")
-	if err != nil || len(paths) == 0 {
-		t.Fatalf("no spec files found (submodule checked out?): %v", err)
+// specDir holds the corpus, a git submodule. Module zips omit
+// submodules, so without it the spec tests skip rather than fail `go test all`.
+var specDir = "handlebars-spec/spec"
+
+// specPaths lists the corpus files, skipping t when the submodule is absent.
+func specPaths(t *testing.T) []string {
+	paths, _ := filepath.Glob(filepath.Join(specDir, "*.json"))
+	if len(paths) == 0 {
+		t.Skip("handlebars-spec submodule not checked out: git submodule update --init")
 	}
+	return paths
+}
+
+func specFiles(t *testing.T, kind func(name string) bool) []string {
 	var out []string
-	for _, p := range paths {
+	for _, p := range specPaths(t) {
 		name := filepath.Base(p)
 		if kind(name) && (os.Getenv("HBSPEC_FILE") == "" || os.Getenv("HBSPEC_FILE") == name) {
 			out = append(out, p)
@@ -597,5 +606,20 @@ func TestSpecTotal(t *testing.T) {
 	t.Logf("spec total: %d/%d pass, %d fail, %d skip", sum[specPass], specTotal, sum[specFail], sum[specSkip])
 	if sum[specPass] != specTotal || sum[specFail] != 0 || sum[specSkip] != 0 {
 		t.Errorf("spec: %d pass, %d fail, %d skip; want %d pass, 0 fail, 0 skip", sum[specPass], sum[specFail], sum[specSkip], specTotal)
+	}
+}
+
+// Without the submodule every corpus test skips instead of failing.
+func TestSpecSkipsWithoutSubmodule(t *testing.T) {
+	defer func(dir string) { specDir = dir }(specDir)
+	specDir = t.TempDir()
+	for name, test := range map[string]func(*testing.T){
+		"tokenizer": TestSpecTokenizer, "parser": TestSpecParser, "render": TestSpecRender,
+		"no panic": TestParseSpecTemplatesNoPanic,
+	} {
+		t.Run(name, func(t *testing.T) {
+			test(t)
+			t.Error("did not skip") // a skip never returns here
+		})
 	}
 }

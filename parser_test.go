@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -41,11 +40,7 @@ func TestParseDepthLimit(t *testing.T) {
 
 // Cheap pre-fuzz check: no spec template may panic the parser.
 func TestParseSpecTemplatesNoPanic(t *testing.T) {
-	paths, _ := filepath.Glob("handlebars-spec/spec/*.json")
-	if len(paths) == 0 {
-		t.Fatal("no spec files")
-	}
-	for _, p := range paths {
+	for _, p := range specPaths(t) {
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			t.Fatal(err)
