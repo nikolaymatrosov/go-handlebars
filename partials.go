@@ -411,16 +411,6 @@ func (s *renderState) addInlines(p *program, sc closure) error {
 // a new fn); add a wrapper return value if one ever must.
 type decorator func(props map[string]any, o *HelperOptions) error
 
-// registerDecorator registers d as name (JS registerDecorator; it shadows
-// the builtin inline). Unexported: decorators are deprecated in
-// handlebars.js 4.x and only the spec harness registers them.
-func (t *Template) registerDecorator(name string, d decorator) {
-	if t.decorators == nil {
-		t.decorators = map[string]decorator{}
-	}
-	t.decorators[name] = d
-}
-
 // wrap is runtime.js wrapProgram's executeDecorators. It runs p's
 // decorators where JS hands a program out: once per block statement,
 // partial block call and template render, never per run (an {{#each}}
@@ -487,6 +477,7 @@ func (s *renderState) decorate(p *program) (*program, error) {
 			w.inlines = append(w.inlines, inlinePartial{name: jsKey(key), closure: closure{prog: fn}})
 			continue
 		}
+		// Only tests register decorators (spec_test.go): the spec harness needs this branch.
 		if w.props == nil {
 			w.props = map[string]any{}
 		}

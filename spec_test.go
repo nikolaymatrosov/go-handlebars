@@ -452,6 +452,17 @@ func matchException(want any, err error) (specStatus, string) {
 	return specPass, ""
 }
 
+// registerDecorator registers d as name (JS registerDecorator; it shadows
+// the builtin inline). Test-only: decorators are deprecated in
+// handlebars.js 4.x, so the library has no public decorator API, and only
+// the spec harness and tests register them.
+func (t *Template) registerDecorator(name string, d decorator) {
+	if t.decorators == nil {
+		t.decorators = map[string]decorator{}
+	}
+	t.decorators[name] = d
+}
+
 // specDir holds the corpus, a git submodule. Module zips omit
 // submodules, so without it the spec tests skip rather than fail `go test all`.
 var specDir = "handlebars-spec/spec"
