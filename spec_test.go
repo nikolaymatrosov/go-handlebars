@@ -25,7 +25,7 @@ type specTest struct {
 	Helpers        json.RawMessage            `json:"helpers"`
 	Partials       map[string]json.RawMessage `json:"partials"` // string or code object
 	CompileOptions map[string]any             `json:"compileOptions"`
-	RuntimeOptions map[string]any             `json:"runtimeOptions"`
+	RuntimeOptions map[string]json.RawMessage `json:"runtimeOptions"`
 	Exception      any                        `json:"exception"` // true, or a string/regex naming the error (not compared)
 	Message        string                     `json:"message"`   // human description only, never compared
 	Decorators     json.RawMessage            `json:"decorators"`
@@ -40,7 +40,7 @@ var specGate = map[string]int{
 	"basic.json":              90,
 	"blocks.json":             31,
 	"builtins.json":           42,
-	"data.json":               17,
+	"data.json":               21,
 	"helpers.json":            87,
 	"partials.json":           0,
 	"regressions.json":        26,
@@ -363,9 +363,15 @@ func runRender(tc specTest) (specStatus, string) {
 	}
 
 	var dataVars map[string]any
-	if d, ok := tc.RuntimeOptions["data"]; ok {
-		// runtimeOptions.data is a plain JSON object; key order is irrelevant here.
-		dataVars, _ = d.(map[string]any)
+	if raw, ok := tc.RuntimeOptions["data"]; ok {
+		// runtimeOptions.data is a JSON object (key order is irrelevant) that may hold code objects.
+		d, err := decodeResolved(raw)
+		if err != nil {
+			return failOrSkip(err)
+		}
+		if om, ok := d.(*omap); ok {
+			dataVars = om.m
+		}
 	}
 	var sb strings.Builder
 	err = tpl.RenderWithData(&sb, data, dataVars)

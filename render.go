@@ -86,6 +86,20 @@ type renderState struct {
 	done    <-chan struct{} // ctx.Done(); nil when ctx can't be cancelled
 }
 
+// rootFrame is runtime.js initData: dataVars is used as is when it sets
+// root; otherwise a child frame (createFrame) holds root = the context, so
+// `@../x` from the root frame still reaches dataVars.
+func rootFrame(ctx any, dataVars map[string]any) *dataFrame {
+	if _, ok := dataVars["root"]; ok {
+		return &dataFrame{vars: dataVars}
+	}
+	f := &dataFrame{vars: map[string]any{"root": ctx}}
+	if dataVars != nil {
+		f.parent = &dataFrame{vars: dataVars}
+	}
+	return f
+}
+
 func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVars map[string]any) error {
 	s := &renderState{t: t, out: out, limits: t.opts.Limits.withDefaults(), ctx: ctx, done: ctx.Done()}
 	out.emitted, out.max = &s.emitted, s.limits.MaxOutputSize
@@ -94,7 +108,7 @@ func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVar
 	}
 	s.depths = append(make([]any, 0, 8), data)
 	if t.opts.Data == nil || *t.opts.Data {
-		s.data = &dataFrame{vars: dataVars} // Task 7: @root, copy of dataVars
+		s.data = rootFrame(data, dataVars)
 	}
 	if err := s.body(t.prog.body, data); err != nil {
 		return err

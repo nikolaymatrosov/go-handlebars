@@ -338,3 +338,27 @@ func TestLoggerPanicRecovered(t *testing.T) {
 		t.Errorf("err = %v, want ErrHelperPanic", err)
 	}
 }
+
+func TestDataRootAndFrames(t *testing.T) {
+	for _, c := range []struct {
+		src  string
+		data any
+		vars map[string]any
+		want string
+	}{
+		{"{{@root.a}}", map[string]any{"a": "x"}, nil, "x"},
+		{"{{@root.a}}", map[string]any{"a": "x"}, map[string]any{"root": map[string]any{"a": "y"}}, "y"},
+		{"{{@../v}}", nil, map[string]any{"v": 1}, "1"},                               // root frame is a child of the seeded vars
+		{"{{#as_ x as |foo|}}{{@foo}}{{/as_}}", nil, map[string]any{"foo": "d"}, "d"}, // block params never shadow @foo
+	} {
+		tpl, err := Parse(c.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tpl.RegisterHelper("as_", func(o *HelperOptions) (any, error) { return o.Fn() })
+		var sb strings.Builder
+		if err := tpl.RenderWithData(&sb, c.data, c.vars); err != nil || sb.String() != c.want {
+			t.Errorf("%s = %q, %v; want %q", c.src, sb.String(), err, c.want)
+		}
+	}
+}

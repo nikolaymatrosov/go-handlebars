@@ -42,7 +42,12 @@ func (o *HelperOptions) Fn() (string, error) { return o.FnWith(o.this) }
 func (o *HelperOptions) FnWith(ctx any) (string, error) { return o.s.renderString(o.fn, ctx) }
 
 // FnTo renders the block with ctx and block params into w (JS
-// options.fn(ctx, {blockParams})). The bytes count against MaxOutputSize;
+// options.fn(ctx, {blockParams, data})). A non-nil dataVars adds a child
+// of the current @data frame holding dataVars (what helpers get from
+// createFrame(options.data) plus assignments), so inherited variables stay
+// visible; nil keeps the current frame. A JS bare {data: obj} that
+// replaces the frame wholesale is not expressible (the corpus never needs
+// it). The bytes count against MaxOutputSize;
 // w is the helper's own sink, not the template's output.
 func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars map[string]any) error {
 	return o.s.renderTo(w, o.fn, ctx, blockParams, o.s.newFrame(dataVars))

@@ -35,6 +35,7 @@ var specFuncs = map[string]any{
 	"d84b64c3871b": func(o *HelperOptions) (any, error) { return "bar" + jsStr(arg(o, 0)), nil },
 	"27589ee64ef5": func(o *HelperOptions) (any, error) { return "bar", nil },
 	"4529e62c8f31": func(o *HelperOptions) (any, error) { return arg(o, 0), nil }, // (arg) => arg
+	"bff21194b3d3": func(o *HelperOptions) (any, error) { return "hello", nil },   // function () { return 'hello'; }
 
 	// builtins.json
 	"02fce0ddd099": func(o *HelperOptions) (any, error) { v, _ := lookupProperty(o.Ctx(), "world"); return v, nil }, // function () {return this.world; }
@@ -376,6 +377,9 @@ func equalsBlockParams(o *HelperOptions, n int) error {
 
 // fnData is JS options.fn(ctx, {data: createFrame(options.data) + vars}).
 func fnData(o *HelperOptions, ctx any, vars map[string]any) (string, error) {
+	if vars == nil {
+		vars = map[string]any{} // createFrame always adds a frame
+	}
 	var sb strings.Builder
 	err := o.FnTo(&sb, ctx, nil, vars)
 	return sb.String(), err

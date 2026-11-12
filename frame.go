@@ -15,10 +15,11 @@ type dataFrame struct {
 	first, last bool
 }
 
-// newFrame is createFrame(options.data) extended with vars. It returns nil
-// (keep the enclosing frame) when there is nothing to add or data is off.
+// newFrame is createFrame(options.data) extended with vars, so an empty
+// non-nil vars still adds a frame level (`@../` depth matches JS). It
+// returns nil (keep the enclosing frame) when vars is nil or data is off.
 func (s *renderState) newFrame(vars map[string]any) *dataFrame {
-	if s.data == nil || len(vars) == 0 {
+	if s.data == nil || vars == nil {
 		return nil
 	}
 	return &dataFrame{parent: s.data, vars: vars}
