@@ -436,6 +436,45 @@ func TestPartialScopes(t *testing.T) {
 	}
 }
 
+// Decorators run when JS wraps their program: once per block statement or
+// partial block call, not per {{#each}} iteration, and not again when the
+// partial block renders.
+func TestDecoratorTiming(t *testing.T) {
+	cases := []struct {
+		src, want string
+		runs      int
+	}{
+		{"{{#each items}}{{*count}}{{/each}}", "", 1},
+		{"{{#each items}}{{#with .}}{{*count}}{{/with}}{{/each}}", "", 3},
+		{`{{#> p}}{{#*inline (count)}}I{{/inline}}{{> x}}{{/p}}`, "II", 1}, // inline name evaluated once
+	}
+	for _, c := range cases {
+		tpl, err := Parse(c.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs := 0
+		tpl.registerDecorator("count", func(map[string]any, *HelperOptions) error { runs++; return nil })
+		tpl.RegisterHelper("count", func(*HelperOptions) (any, error) { runs++; return "x", nil })
+		if err := tpl.RegisterPartial("p", "{{> x}}{{> @partial-block}}"); err != nil {
+			t.Fatal(err)
+		}
+		got, err := tpl.Render(map[string]any{"items": []any{1, 2, 3}})
+		if got != c.want || err != nil || runs != c.runs {
+			t.Errorf("%s = %q, %v, %d runs; want %q, %d runs", c.src, got, err, runs, c.want, c.runs)
+		}
+	}
+
+	tpl, _ := Parse("{{#if true}}{{*nope}}{{/if}}")
+	if _, err := tpl.Render(nil); err == nil || err.Error() != `Missing decorator: "nope"` {
+		t.Errorf("unknown decorator: err = %v", err)
+	}
+	tpl.registerDecorator("nope", func(map[string]any, *HelperOptions) error { panic("boom") })
+	if _, err := tpl.Render(nil); !errors.Is(err, ErrHelperPanic) {
+		t.Errorf("panicking decorator: err = %v, want ErrHelperPanic", err)
+	}
+}
+
 func TestStrictErrorLocation(t *testing.T) {
 	tpl, err := ParseWithOptions("\n\n\n   {{hello}}", Options{Strict: true})
 	if err != nil {

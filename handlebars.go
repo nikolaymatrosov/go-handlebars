@@ -101,11 +101,12 @@ func ParseWithOptions(src string, opts Options) (*Template, error) {
 
 // Template is a parsed template.
 type Template struct {
-	prog     *program
-	opts     Options
-	helpers  map[string]Helper
-	partials map[string]partialDef
-	bufHint  int // Render's initial buffer size
+	prog       *program
+	opts       Options
+	helpers    map[string]Helper
+	partials   map[string]partialDef
+	decorators map[string]decorator
+	bufHint    int // Render's initial buffer size
 
 	// Logger receives {{log}} output: level is "debug", "info", "warn",
 	// "error" or "log" (an out-of-range numeric level). Nil discards it.

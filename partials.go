@@ -6,8 +6,8 @@ import (
 )
 
 // Partials port compiler.js PartialStatement, runtime.js
-// invokePartialWrapper / resolvePartial / invokePartial and the inline
-// decorator (decorators/inline.js).
+// invokePartialWrapper / resolvePartial / invokePartial, and decorators
+// (wrapProgram's executeDecorators, decorators/inline.js).
 
 // partialDef is a registered partial: a parsed template or a function.
 type partialDef struct {
@@ -130,6 +130,10 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 	if err != nil {
 		return err
 	}
+	prog, err := s.wrap(n.program) // JS options.fn: the block's decorators run once, here
+	if err != nil {
+		return err
+	}
 	// resolvePartial sees the caller's partials, before the block's inline
 	// partials join them.
 	tg, err := s.resolve(name, dynamic)
@@ -137,8 +141,8 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 		return err
 	}
 	var block *partialBlock
-	if n.program != nil {
-		block = &partialBlock{closure: s.closure(n.program, s.depths, false), inlines: s.inlines, outer: s.partialBlock()}
+	if prog != nil {
+		block = &partialBlock{closure: s.closure(prog, s.depths, false), inlines: s.inlines, outer: s.partialBlock()}
 		if !tg.found() {
 			tg.block = block // the failover content
 		}
@@ -165,8 +169,8 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 		if s.data != nil {
 			s.data = &dataFrame{parent: s.data, blockSet: true, block: block}
 		}
-		if len(block.prog.decorators) > 0 { // JS fn.partials: the block's inline partials reach the partial
-			err = s.decorate(block.prog, ctx, s.closure(nil, s.depths, true))
+		if len(block.prog.inlines) > 0 { // JS fn.partials: the block's inline partials reach the partial
+			err = s.addInlines(block.prog, s.closure(nil, s.depths, true))
 		}
 	}
 	if err == nil {
@@ -198,12 +202,16 @@ func (s *renderState) invoke(tg target, ctx any, name string) error {
 		if !s.opts.Compat { // only compat passes the caller's depths
 			s.depths = s.depths[len(s.depths):]
 		}
+		s.bps, s.opts = s.bps[len(s.bps):], &tg.def.t.opts
+		p, err := s.wrap(tg.def.t.prog) // before ctx is pushed: JS main's decorators get options.depths || []
+		if err != nil {
+			return err
+		}
 		outer := s.depths
 		if len(s.depths) == 0 || !sameContext(ctx, s.depths[len(s.depths)-1]) {
 			s.depths = append(s.depths, ctx)
 		}
-		s.bps, s.opts = s.bps[len(s.bps):], &tg.def.t.opts
-		return s.run(tg.def.t.prog, ctx, outer)
+		return s.run(p, ctx, outer)
 	case tg.inline != nil:
 		c := *tg.inline
 		s.depths, s.bps, s.opts = c.depths, c.bps, c.opts
@@ -280,7 +288,9 @@ func (s *renderState) resolve(name string, dynamic bool) (tg target, err error) 
 			return tg, err
 		}
 		if e.name == name {
-			tg.inline = &e.closure
+			if e.prog != nil { // {{*inline "x"}} (no block) defines x as undefined
+				tg.inline = &e.closure
+			}
 			return tg, nil
 		}
 	}
@@ -292,20 +302,19 @@ func (s *renderState) resolve(name string, dynamic bool) (tg target, err error) 
 	return tg, nil
 }
 
-// run renders p's body after its decorators (JS executeDecorators). The
-// only decorator so far is inline; the partials it defines are visible
-// until p returns, as decorators/inline.js swaps container.partials around
-// the program. outer is the depths before p's context was pushed: JS hands
-// decorators the wrap-time depths (options.depths || [] for a template).
+// run renders p's body (JS prog): the inline partials p's decorators
+// defined are visible until p returns, as decorators/inline.js swaps
+// container.partials around the program. outer is the depths before p's
+// context was pushed; the inline partials run with them.
 func (s *renderState) run(p *program, ctx any, outer []any) error {
 	if p == nil { // a zero Template
 		return nil
 	}
-	if len(p.decorators) == 0 {
+	if len(p.inlines) == 0 {
 		return s.body(p.body, ctx)
 	}
 	scope := s.inlines
-	err := s.decorate(p, ctx, s.closure(nil, outer, false))
+	err := s.addInlines(p, s.closure(nil, outer, false))
 	if err == nil {
 		err = s.body(p.body, ctx)
 	}
@@ -313,32 +322,113 @@ func (s *renderState) run(p *program, ctx any, outer []any) error {
 	return err
 }
 
-// decorate runs p's decorators, one op each: each {{#*inline "name"}}
-// adds its block, in scope sc, to the inline partials.
-func (s *renderState) decorate(p *program, ctx any, sc closure) error {
-	for _, d := range p.decorators {
+// addInlines brings p's inline partials into scope, bound to sc: one op
+// each, so a program full of them can't make every run expensive.
+func (s *renderState) addInlines(p *program, sc closure) error {
+	for _, ip := range p.inlines {
 		if err := s.step(); err != nil {
 			return err
 		}
-		b, ok := d.(*blockNode)
-		if ok {
-			path, _ := jsOriginal(b.path)
-			ok = path == "inline"
-		}
-		if !ok {
-			return errAt(d, "decorators are not supported yet") // Task 10b
-		}
-		var name any
-		if len(b.params) > 0 {
-			var err error
-			if name, err = s.param(b.params[0], ctx); err != nil {
-				return err
-			}
-		}
-		sc.prog = b.program
-		s.inlines = &inlinePartial{jsKey(name), sc, s.inlines}
+		sc.prog = ip.prog
+		s.inlines = &inlinePartial{ip.name, sc, s.inlines}
 	}
 	return nil
+}
+
+// decorator is a registered decorator, JS (fn, props, container, options)
+// => fn. props are the properties of the program it decorates: JS fn.x and
+// props.x alike, which a block helper reads as options.fn.x. o holds the
+// decorator's args, hash and own block (o.Fn() is JS options.fn()).
+// ponytail: a decorator can't replace the program (no corpus test returns
+// a new fn); add a wrapper return value if one ever must.
+type decorator func(props map[string]any, o *HelperOptions) error
+
+// registerDecorator registers d as name (JS registerDecorator; it shadows
+// the builtin inline). Unexported: decorators are deprecated in
+// handlebars.js 4.x and only the spec harness registers them.
+func (t *Template) registerDecorator(name string, d decorator) {
+	if t.decorators == nil {
+		t.decorators = map[string]decorator{}
+	}
+	t.decorators[name] = d
+}
+
+// wrap is runtime.js wrapProgram's executeDecorators. It runs p's
+// decorators where JS hands a program out: once per block statement,
+// partial block call and template render, never per run (an {{#each}}
+// iteration reuses the wrap). s.depths must be the wrap-time depths
+// (a template wraps before pushing its context); decorator params see
+// their innermost entry (JS depth0: undefined for a template's own
+// decorators). p is returned as is when it has none.
+// ponytail: JS wraps an ambiguous block ({{#foo}} without a helper foo)
+// twice, running its decorators twice; this wraps once.
+func (s *renderState) wrap(p *program) (*program, error) {
+	if !p.decorated() {
+		return p, nil
+	}
+	return s.decorate(p)
+}
+
+// decorated reports that p (maybe nil) has decorators still to run.
+func (p *program) decorated() bool { return p != nil && p.decorators != nil }
+
+// decorate runs p's decorators, one op each, and returns the copy of p
+// holding their results (decorators already cleared: rewrapping it is a
+// no-op). A user decorator runs under s.call's recover; inline is builtin.
+func (s *renderState) decorate(p *program) (*program, error) {
+	w := *p
+	w.decorators = nil
+	var ctx any
+	if len(s.depths) > 0 {
+		ctx = s.depths[len(s.depths)-1]
+	}
+	for _, d := range p.decorators {
+		if err := s.step(); err != nil {
+			return nil, err
+		}
+		var c *call
+		var body *program
+		switch d := d.(type) {
+		case *mustacheNode:
+			c = &d.call
+		case *blockNode:
+			c, body = &d.call, d.program
+		default:
+			return nil, errAt(d, "internal error: not a decorator")
+		}
+		name, _ := jsOriginal(c.path)
+		dec := s.t.decorators[name]
+		if dec == nil && name != "inline" {
+			return nil, &Error{Message: "Missing decorator: \"" + name + "\""} // JS new Error: no loc
+		}
+		fn, err := s.wrap(body) // JS options.fn = container.program(...)
+		if err != nil {
+			return nil, err
+		}
+		o := &HelperOptions{Name: name, s: s, fn: fn} // JS calls decorators without a `this`
+		if err := s.args(c, ctx, o); err != nil {
+			return nil, err
+		}
+		// ponytail: inline shares the wrap path but stays a builtin branch,
+		// not a registered decorator: its JS wrapper (swapping
+		// container.partials) is run's scope binding, which a decorator
+		// func can't express. Register it if decorators ever replace fn.
+		if dec == nil { // decorators/inline.js: props.partials[args[0]] = options.fn
+			var key any
+			if len(o.Args) > 0 {
+				key = o.Args[0]
+			}
+			w.inlines = append(w.inlines, inlinePartial{name: jsKey(key), closure: closure{prog: fn}})
+			continue
+		}
+		if w.props == nil {
+			w.props = map[string]any{}
+		}
+		if _, err := s.call(name, func(o *HelperOptions) (any, error) { return nil, dec(w.props, o) }, o); err != nil {
+			return nil, err
+		}
+	}
+	return &w, nil
 }
 
 // jsKey is JS String(v) used as a property name.

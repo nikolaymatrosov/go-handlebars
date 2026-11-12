@@ -156,11 +156,15 @@ func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVar
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	s.depths = append(make([]any, 0, 8), data)
 	if t.opts.Data == nil || *t.opts.Data {
 		s.data = rootFrame(data, dataVars)
 	}
-	if err := s.run(t.prog, data, nil); err != nil {
+	p, err := s.wrap(t.prog) // before depths are seeded: JS main's decorators get options.depths || []
+	if err == nil {
+		s.depths = append(make([]any, 0, 8), data)
+		err = s.run(p, data, nil)
+	}
+	if err != nil {
 		return err
 	}
 	// Both counters stay over once exceeded, so a LimitError a helper
@@ -296,7 +300,7 @@ func (s *renderState) body(nodes []node, ctx any) error {
 		case *commentNode:
 		case *mustacheNode:
 			if n.decorator {
-				continue // run on program entry
+				continue // run when the program is wrapped
 			}
 			var v any
 			if v, err = s.expr(&n.call, ctx, false, nil, nil); err == nil {
@@ -304,10 +308,16 @@ func (s *renderState) body(nodes []node, ctx any) error {
 			}
 		case *blockNode:
 			if n.decorator {
-				continue // run on program entry
+				continue // run when the program is wrapped
+			}
+			fn, inverse := n.program, n.inverse
+			if fn.decorated() || inverse.decorated() {
+				if fn, inverse, err = s.wrapBlock(n); err != nil {
+					return err
+				}
 			}
 			var v any
-			if v, err = s.expr(&n.call, ctx, true, n.program, n.inverse); err == nil {
+			if v, err = s.expr(&n.call, ctx, true, fn, inverse); err == nil {
 				err = s.out.writeValue(v, false)
 			}
 		case *partialNode:
@@ -320,6 +330,18 @@ func (s *renderState) body(nodes []node, ctx any) error {
 		}
 	}
 	return nil
+}
+
+// wrapBlock wraps a block statement's programs (JS options.fn/inverse =
+// container.program(...)), running their decorators before the helper
+// sees them.
+// ponytail: JS evaluates the callee and params before the wrap; only which
+// error is reported first can differ.
+func (s *renderState) wrapBlock(n *blockNode) (fn, inverse *program, err error) {
+	if fn, err = s.wrap(n.program); err == nil {
+		inverse, err = s.wrap(n.inverse)
+	}
+	return fn, inverse, err
 }
 
 // errAt is a runtime *Error positioned at n.

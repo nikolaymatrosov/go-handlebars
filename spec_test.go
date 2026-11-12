@@ -38,7 +38,7 @@ var specGate = map[string]int{
 	"tokenizer.json":          78,
 	"parser.json":             79,
 	"basic.json":              90,
-	"blocks.json":             31,
+	"blocks.json":             39,
 	"builtins.json":           42,
 	"data.json":               22,
 	"helpers.json":            87,
@@ -319,11 +319,9 @@ func runRender(tc specTest) (specStatus, string) {
 	if helpers, err = decodeResolved(tc.Helpers); err != nil {
 		return failOrSkip(err)
 	}
-	// Task 10b: register decorators once the API exists.
 	if decorators, err = decodeResolved(tc.Decorators); err != nil {
 		return failOrSkip(err)
 	}
-	_ = decorators
 	// JS registers some partials globally (Handlebars.registerPartial) and
 	// passes others per render (options.partials); a Template has one
 	// registry, so both go there.
@@ -360,6 +358,13 @@ func runRender(tc specTest) (specStatus, string) {
 			case func(*HelperOptions) (any, error):
 				tpl.RegisterHelper(name, h)
 			} // anything else (e.g. a plain string) is not a helper
+		}
+	}
+	if dm, ok := decorators.(*omap); ok {
+		for _, name := range dm.keys {
+			if d, ok := dm.m[name].(func(map[string]any, *HelperOptions) error); ok {
+				tpl.registerDecorator(name, d)
+			}
 		}
 	}
 	for name, src := range partials {

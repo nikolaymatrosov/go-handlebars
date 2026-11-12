@@ -25,7 +25,11 @@ type program struct {
 	body        []node
 	blockParams []string // `as |a b|` names (raw ID text); nil when absent
 	chained     bool     // inverse holding the single block of an `{{else foo}}` chain
-	decorators  []node   // the decorator blocks/mustaches in body, run on entry (JS fn.decorator)
+	decorators  []node   // the decorator blocks/mustaches in body (JS fn.decorator), run by s.wrap
+
+	// Set on the copy s.wrap returns once the decorators ran (JS prog):
+	props   map[string]any  // what decorators set on JS fn or props; block helpers read options.fn.x
+	inlines []inlinePartial // {{#*inline}} partials defined (name and prog only); run binds their scope
 }
 
 // isDecorator reports whether n is {{* x}} or {{#* x}}...{{/x}}.

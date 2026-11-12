@@ -302,23 +302,9 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 // (helpers[name] || nonHelper || helperMissing).call(this, ...args, options).
 func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any, error) {
 	p := c.callee
-	o := &HelperOptions{Name: p.original, Args: make([]any, len(c.params)), s: s, this: helperThis(ctx), fn: fn, inverse: inverse}
-	for i, n := range c.params {
-		v, err := s.param(n, ctx)
-		if err != nil {
-			return nil, err
-		}
-		o.Args[i] = v
-	}
-	if c.hash != nil {
-		o.Hash = make(map[string]any, len(c.hash))
-		for _, kv := range c.hash {
-			v, err := s.param(kv.value, ctx)
-			if err != nil {
-				return nil, err
-			}
-			o.Hash[kv.key] = v
-		}
+	o := &HelperOptions{Name: p.original, s: s, this: helperThis(ctx), fn: fn, inverse: inverse}
+	if err := s.args(c, ctx, o); err != nil {
+		return nil, err
 	}
 	if c.kind == kindKnown {
 		o.Name = helperName(p)
@@ -347,6 +333,29 @@ func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any,
 		}
 	}
 	return s.callHelper(o.Name, h, builtin, o)
+}
+
+// args evaluates c's params and hash into o.Args and o.Hash (JS setupParams).
+func (s *renderState) args(c *call, ctx any, o *HelperOptions) error {
+	o.Args = make([]any, len(c.params))
+	for i, n := range c.params {
+		v, err := s.param(n, ctx)
+		if err != nil {
+			return err
+		}
+		o.Args[i] = v
+	}
+	if c.hash != nil {
+		o.Hash = make(map[string]any, len(c.hash))
+		for _, kv := range c.hash {
+			v, err := s.param(kv.value, ctx)
+			if err != nil {
+				return err
+			}
+			o.Hash[kv.key] = v
+		}
+	}
+	return nil
 }
 
 // helperThis is the JS helper call context: depth0 != null ? depth0 : nullContext.

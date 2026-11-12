@@ -62,6 +62,48 @@ var specFuncs = map[string]any{
 	"be4daadd8d6d": func(o *HelperOptions) (any, error) { return o.Hash["length"], nil },                // function(options) { return options.hash.length; }
 	"ee7950d75856": func(o *HelperOptions) (any, error) { s, err := o.Fn(); return SafeString(s), err }, // function (options) { return new Handlebars.SafeString(options.fn()); }
 
+	// blocks.json decorators
+	"d6b048a79aec": func(o *HelperOptions) (any, error) { return fnProp(o, "run"), nil }, // function (options) { return options.fn.run; }
+	"80779a684743": func(o *HelperOptions) (any, error) { // function (options) { return options.fn() + options.fn.run; }
+		s, err := o.FnWith(nil)
+		return s + jsStr(fnProp(o, "run")), err
+	},
+	// The decorators, JS (fn, props, container, options): fn.x and props.x
+	// are both props[x]; a decorator's o.Fn() is JS options.fn().
+	"dfed9ef14eed": func(props map[string]any, o *HelperOptions) error { props["run"] = "success"; return nil }, // fn.run = 'success'; return fn;
+	"0a1b4528b501": func(props map[string]any, o *HelperOptions) error { props["run"] = "cess"; return nil },    // fn.run = 'cess';
+	"88bcb710b337": func(props map[string]any, o *HelperOptions) error { // fn.run = options.fn(); return fn;
+		s, err := o.Fn()
+		props["run"] = s
+		return err
+	},
+	"43975141e78f": func(props map[string]any, o *HelperOptions) error { // fn.run = options.fn.nested + options.fn(); return fn;
+		s, err := o.Fn()
+		props["run"] = jsStr(fnProp(o, "nested")) + s
+		return err
+	},
+	"e70f1e5cf207": func(props map[string]any, o *HelperOptions) error { // props.nested = options.fn();
+		s, err := o.Fn()
+		props["nested"] = s
+		return err
+	},
+	"449b4a7c55f3": func(props map[string]any, o *HelperOptions) error { // fn.run = (fn.run || '') + options.fn(); return fn;
+		s, err := o.Fn()
+		prev := ""
+		if jsTruthy(props["run"]) {
+			prev = jsStr(props["run"])
+		}
+		props["run"] = prev + s
+		return err
+	},
+	"60637683e7a9": func(props map[string]any, o *HelperOptions) error { props["run"] = o.Args; return nil }, // fn.run = options.args; return fn;
+	"680cabb587ba": func(props map[string]any, o *HelperOptions) error { // equals(options.args[0], 'success'); run = true; return fn;
+		return equalsArg0(o, "success")
+	},
+	"b0232b97c13f": func(props map[string]any, o *HelperOptions) error { // equals(options.args[0], undefined); global.run = true; return fn;
+		return equalsArg0(o, nil)
+	},
+
 	// strict.json
 	"cdf6591d4600": func(o *HelperOptions) (any, error) { // equals('value' in options.hash, true); equals(options.hash.value, undefined); return 'success'
 		if v, ok := o.Hash["value"]; !ok || v != nil {
@@ -448,4 +490,20 @@ func jsAdd(a, b any) any {
 		return x + y
 	}
 	return jsStr(a) + jsStr(b)
+}
+
+// fnProp is JS options.fn[name]: a property a decorator set on the block.
+func fnProp(o *HelperOptions, name string) any {
+	if o.fn == nil {
+		return nil
+	}
+	return o.fn.props[name]
+}
+
+// equalsArg0 is the spec's equals(options.args[0], want).
+func equalsArg0(o *HelperOptions, want any) error {
+	if got := arg(o, 0); got != want {
+		return errors.New("equals: options.args[0] = " + jsStr(got) + ", want " + jsStr(want))
+	}
+	return nil
 }

@@ -48,13 +48,14 @@ func fanOut(n int) map[string]string {
 	return m
 }
 
-// Inline decorators and the inline partials scanned per call cost ops, so
-// a template full of them stays within MaxOps.
+// Inline decorators, binding their partials on each run and the inline
+// partials scanned per call all cost ops, so a template full of them stays
+// within MaxOps.
 func TestInlinePartialOps(t *testing.T) {
 	inlines := strings.Repeat(`{{#*inline "i"}}x{{/inline}}`, 2000)
 	items := make([]any, 10000)
 	for _, src := range []string{
-		"{{#each items}}" + inlines + "{{/each}}",                                           // decorators run per iteration
+		"{{#each items}}" + inlines + "{{/each}}",                                           // each iteration binds 2000 inline partials
 		`{{#*inline "first"}}{{/inline}}` + inlines + "{{#each items}}{{> first}}{{/each}}", // scan past 2000 per call
 	} {
 		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: 100_000}})
