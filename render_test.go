@@ -233,8 +233,8 @@ func TestHelperAPI(t *testing.T) {
 		{Options{Limits: Limits{MaxOutputSize: 3}}, "{{#swallow}}{{s}}{{/swallow}}", "!output size"},
 		{Options{Limits: Limits{MaxOps: 1}}, "{{#swallow}}{{s}}{{/swallow}}", "!ops"}, // no later step to trip
 		{Options{Limits: Limits{MaxOps: 100}}, "{{#spin}}{{/spin}}", "!ops"},
-		{Options{}, "{{boom}}", `!helper "boom" panicked: boom`},
-		{Options{}, "{{#bp as |b|}}{{#look}}{{/look}}{{boom}}{{/bp}}", "!panicked"},
+		{Options{}, "{{boom}}", "!handlebars: helper panicked (boom): boom\ngoroutine "}, // with the stack
+		{Options{}, "{{#bp as |b|}}{{#look}}{{/look}}{{boom}}{{/bp}}", "!helper panicked (boom)"},
 	}
 	for _, c := range cases {
 		tpl, err := ParseWithOptions(c.src, c.opts)
@@ -253,6 +253,23 @@ func TestHelperAPI(t *testing.T) {
 		}
 	}
 
+	tpl, _ := Parse("{{boom}}")
+	tpl.RegisterHelper("boom", helpers["boom"])
+	if _, err := tpl.Render(nil); !errors.Is(err, ErrHelperPanic) {
+		t.Errorf("helper panic: %v, want ErrHelperPanic", err)
+	}
+	// Library code is never recovered: a panic below a plain section (here a
+	// KeyedCollection's Get) must reach the caller, not pose as a helper panic.
+	func() {
+		defer func() {
+			if r := recover(); r != "library" {
+				t.Errorf("plain section recovered a library panic: %v", r)
+			}
+		}()
+		tpl, _ := Parse("{{#x}}{{y}}{{/x}}")
+		tpl.Render(map[string]any{"x": panicKC{}})
+	}()
+
 	// knownHelpersOnly rejects unknown helpers at compile time, even in
 	// branches that never run; a parse error still wins (JS parses first).
 	ko := Options{KnownHelpersOnly: true}
@@ -263,3 +280,10 @@ func TestHelperAPI(t *testing.T) {
 		t.Errorf("knownHelpersOnly + parse error: %v", err)
 	}
 }
+
+// panicKC is a KeyedCollection whose Get panics.
+type panicKC struct{}
+
+func (panicKC) Keys() []string         { return nil }
+func (panicKC) Get(string) (any, bool) { panic("library") }
+func (panicKC) Len() int               { return 0 }
