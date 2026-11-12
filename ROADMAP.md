@@ -359,7 +359,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 4: Blocks → blocks.json 31/39 (all except 8 decorator tests)
+### Task 4: Blocks → blocks.json 31/39 (all except 8 decorator tests) ✅ (23/39; 8 need builtins/@data → T6/T7, 8 decorators → T10)
 
 **Files:**
 
@@ -371,15 +371,15 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 - Consumes: `blockNode`, `isEmpty`, `renderState`.
 - Produces: `evalBlock` handling: truthy section (push context), array iteration, inverted `{{^x}}`, `{{else}}`, chained `{{else if ...}}` (the `chained` flag renders the inverse's single block without standalone re-strip), block params `as |v k|`, `../` context walking, `this` sections. Depth guard: `s.depth++` on every block/program entry, check `MaxRenderDepth`; `s.step()` per iteration.
 
-- [ ] **Step 1: Implement plain-path block semantics** mirroring `blockHelperMissing` in `lib/handlebars/helpers/block-helper-missing.js`: value truthy non-array → render program with value as context (unless value is `true` → current context); array → iterate (each element pushed, ops counted); falsy/empty → inverse.
+- [x] **Step 1: Implement plain-path block semantics** mirroring `blockHelperMissing` in `lib/handlebars/helpers/block-helper-missing.js`: value truthy non-array → render program with value as context (unless value is `true` → current context); array → iterate (each element pushed, ops counted); falsy/empty → inverse.
 
-- [ ] **Step 2: Block params:** a program with `blockParams` resolves those names from a per-frame slice before normal context lookup (see `runtime.js` blockParams chain).
+- [x] **Step 2: Block params:** a program with `blockParams` resolves those names from a per-frame slice before normal context lookup (see `runtime.js` blockParams chain).
 
-- [ ] **Step 3: Compat mode** (`Options.Compat`, 3 tests here): failed lookup retries walking up the context stack depth-first.
+- [x] **Step 3: Compat mode** (`Options.Compat`, 3 tests here): failed lookup retries walking up the context stack depth-first.
 
-- [ ] **Step 4: Run `HBSPEC_FILE=blocks.json go test -run TestSpecRender | tail -3`** — target **31 pass / 8 skip (decorators, Task 10) / 0 fail**. basic.json must stay green.
+- [x] **Step 4: Run `HBSPEC_FILE=blocks.json go test -run TestSpecRender | tail -3`** — target **31 pass / 8 skip (decorators, Task 10) / 0 fail**. basic.json must stay green.
 
-- [ ] **Step 5: Commit** `feat: block rendering (blocks spec 31/39, decorators pending)`.
+- [x] **Step 5: Commit** `feat: block rendering (blocks spec 31/39, decorators pending)`.
 
 ---
 
