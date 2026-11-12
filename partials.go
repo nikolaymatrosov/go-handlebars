@@ -160,7 +160,9 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 		case n.hash != nil: // invokePartialWrapper: options.ids[0] = true
 			id = "true"
 		case len(n.params) > 0:
-			id = s.paramID(n.params[0])
+			if id, err = s.paramID(n.params[0]); err != nil {
+				return err
+			}
 		}
 		if id != "" && id != "null" && id != "undefined" {
 			s.data.contextPath = id

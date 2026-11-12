@@ -14,7 +14,14 @@ type Limits struct {
 	MaxParseDepth   int // nesting of blocks/subexpressions during parse
 	MaxRenderDepth  int // runtime nesting: block scopes + partial expansions
 	MaxOutputSize   int // total bytes the renderer may emit
-	MaxOps          int // substitutions + helper calls + loop iterations
+	// MaxOps bounds render work. One op each: substitution, helper or
+	// Fn/FnTo call, loop iteration, argument or hash pair, path segment
+	// past the first, comment, partial call, inline partial bound or
+	// scanned, decorator, and key a hash partial copies; plus one per KiB
+	// of a long name or trackIds path the render hashes or copies.
+	// API change: counts more than substitutions + helper calls + loop
+	// iterations, so work per op is bounded.
+	MaxOps int
 }
 
 var DefaultLimits = Limits{

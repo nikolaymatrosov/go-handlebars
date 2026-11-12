@@ -407,7 +407,7 @@ func (s *renderState) args(c *call, ctx any, o *HelperOptions) error {
 	case s.opts.StringParams:
 		s.stringParams(c, ctx, o)
 	case s.opts.TrackIDs:
-		s.trackIDs(c, o)
+		return s.trackIDs(c, o)
 	}
 	return nil
 }
@@ -460,50 +460,61 @@ func nodeType(n node) string {
 }
 
 // trackIDs sets o's ids (JS setupParams under trackIds).
-func (s *renderState) trackIDs(c *call, o *HelperOptions) {
+func (s *renderState) trackIDs(c *call, o *HelperOptions) error {
 	l := &LegacyParams{IDs: make([]string, len(c.params))}
+	o.Legacy = l
+	var err error
 	for i, n := range c.params {
-		l.IDs[i] = s.paramID(n)
+		if l.IDs[i], err = s.paramID(n); err != nil {
+			return err
+		}
 	}
 	if c.hash != nil {
 		l.HashIDs = make(map[string]string, len(c.hash))
 		for _, kv := range c.hash {
-			l.HashIDs[kv.key] = s.paramID(kv.value)
+			if l.HashIDs[kv.key], err = s.paramID(kv.value); err != nil {
+				return err
+			}
 		}
 	}
-	o.Legacy = l
+	return nil
 }
 
 // paramID is javascript-compiler.js pushId for param n, as a string: a
 // path's parse-time id; for a block param, its frame's recorded path
 // (JS blockParams[d].path[i]; "undefined" when the frame has none) plus
 // "." + the child path; "true" for a subexpression; "null" for a literal.
-func (s *renderState) paramID(n node) string {
+func (s *renderState) paramID(n node) (string, error) {
 	switch n := n.(type) {
 	case *subExpr:
-		return "true"
+		return "true", nil
 	case *pathExpr:
 		if !n.bp {
-			return n.legacy
+			return n.legacy, nil
 		}
 		id := "undefined" // JS throws a TypeError reading the missing path; we stay lenient like the value lookup
 		if i := len(s.bps) - 1 - n.bpDepth; i >= 0 && n.bpIdx < len(s.bps[i].ids) {
 			id = s.bps[i].ids[n.bpIdx]
 		}
 		if n.legacy == "" {
-			return id
+			return id, nil
 		}
-		return strings.Join([]string{id, n.legacy}, ".")
+		id = strings.Join([]string{id, n.legacy}, ".")
+		return id, s.steps(len(id) >> 10) // a copy of the block param's path
 	}
-	return "null"
+	return "null", nil
 }
 
-// appendContextPath is utils.js appendContextPath(data.contextPath, id).
-func appendContextPath(data *dataFrame, id string) string {
-	if cp, _ := data.get("contextPath"); jsTruthy(cp) {
-		return strings.Join([]string{jsKey(cp), id}, ".")
+// appendContextPath is utils.js appendContextPath(data.contextPath, id)
+// for the current frame. Paths grow with nesting and an id can be as long
+// as the template, so each KiB copied costs an op.
+func (s *renderState) appendContextPath(id string) (string, error) {
+	cp, _ := s.data.get("contextPath")
+	if !jsTruthy(cp) {
+		return id, nil
 	}
-	return id
+	path := strings.Join([]string{jsKey(cp), id}, ".")
+	return path, s.steps(len(path) >> 10)
 }
 
 // helperThis is the JS helper call context: depth0 != null ? depth0 : nullContext.
@@ -546,7 +557,11 @@ func blockHelperMissing(o *HelperOptions) (any, error) {
 		return s.callHelper("each", h, builtin, o)
 	}
 	if s.opts.TrackIDs && s.data != nil {
-		return nil, s.renderFrame(o.fn, v, bpFrame{}, &dataFrame{parent: s.data, contextPath: appendContextPath(s.data, o.Name)})
+		path, err := s.appendContextPath(o.Name)
+		if err != nil {
+			return nil, err
+		}
+		return nil, s.renderFrame(o.fn, v, bpFrame{}, &dataFrame{parent: s.data, contextPath: path})
 	}
 	return nil, s.renderProgram(o.fn, v)
 }

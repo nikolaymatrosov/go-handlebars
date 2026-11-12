@@ -432,3 +432,38 @@ func TestLongNameOps(t *testing.T) {
 		}
 	}
 }
+
+// Under TrackIDs, contextPath and block-param ids are copied per item and
+// per call, and one id can be as long as the template (`this/./././...`
+// drops the dots from the lookup but keeps them in the id): each KiB
+// copied costs an op. Uncharged, each case stays under MaxOps.
+func TestTrackIDsPathOps(t *testing.T) {
+	long := "this" + strings.Repeat("/.", 100_000) // a 200 KB id
+	for _, src := range []string{
+		"{{#with " + long + "}}{{#each a}}{{#each ../a}}x{{/each}}{{/each}}{{/with}}", // the review's probe
+		"{{#with " + long + "}}{{#each b}}x{{/each}}{{/with}}",                        // each: per item
+		"{{#with " + long + "}}{{#rep}}{{#with .}}x{{/with}}{{/rep}}{{/with}}",        // with: appendContextPath
+		"{{#with " + long + " as |w|}}{{#rep}}{{lookup w.x 1}}{{/rep}}{{/with}}",      // a block param's id
+	} {
+		tpl, err := ParseWithOptions(src, Options{TrackIDs: true, Limits: Limits{MaxOps: 100_000}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tpl.RegisterHelper("rep", func(o *HelperOptions) (any, error) {
+			for i := 0; i < 1000; i++ {
+				if _, err := o.Fn(); err != nil {
+					return nil, err
+				}
+			}
+			return nil, nil
+		})
+		err = bounded(t, func() error {
+			_, err := tpl.Render(map[string]any{"a": make([]any, 250), "b": make([]any, 1000)})
+			return err
+		})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%.60s: err = %v, want ops LimitError", strings.Replace(src, long, "this/./...", 1), err)
+		}
+	}
+}

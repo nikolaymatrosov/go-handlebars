@@ -84,7 +84,11 @@ func withHelper(o *HelperOptions) (any, error) {
 	var df *dataFrame
 	id, tracked := o.id0()
 	if tracked && o.s.data != nil { // data.contextPath = appendContextPath(...)
-		df = &dataFrame{parent: o.s.data, contextPath: appendContextPath(o.s.data, id)}
+		path, err := o.s.appendContextPath(id)
+		if err != nil {
+			return nil, err
+		}
+		df = &dataFrame{parent: o.s.data, contextPath: path}
 	}
 	var bp bpFrame
 	if o.fn != nil && len(o.fn.blockParams) > 0 {
@@ -209,6 +213,9 @@ func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
 		} else {
 			r.path = append(r.path[:r.pathLen], key...)
 		}
+		if err := s.steps(len(r.path) >> 10); err != nil { // copied per item
+			return err
+		}
 		path := string(r.path)
 		if r.frame != nil {
 			r.frame.contextPath = path
@@ -241,7 +248,11 @@ func eachHelper(o *HelperOptions) (any, error) {
 	if id, ok := o.id0(); ok { // trackIds
 		r.path = []byte("undefined") // without data JS leaves contextPath undefined: undefined + field
 		if r.frame != nil {
-			r.path = append([]byte(appendContextPath(o.s.data, id)), '.')
+			path, err := o.s.appendContextPath(id)
+			if err != nil {
+				return nil, err
+			}
+			r.path = append([]byte(path), '.')
 		}
 		r.pathLen = len(r.path)
 		if r.bp != nil {
