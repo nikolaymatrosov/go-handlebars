@@ -475,7 +475,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 10: Whitespace render tests, strict mode, regressions, decorators
+### Task 10: Whitespace render tests, strict mode, regressions, decorators ✅
 
 **Files:**
 
@@ -484,8 +484,8 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 - [x] **Step 1: whitespace-control.json → 36/36** (mostly already green from Task 2's AST strip flags; fix evaluator's handling of `strip` on content boundaries).
 - [x] **Step 2: strict.json → 22/22.** `Strict`: missing *property on existing-path lookups* and missing helpers → `*Error` with messages like `"<name>" not defined in <context>` (copy exact strings from the corpus `message` fields). `AssumeObjects`: skip existence checks on intermediate segments (nil deref must still return a clean error, never panic).
 - [x] **Step 3: decorators (blocks.json 8 tests) → blocks.json 39/39.** Minimal decorator machinery mirroring `runtime.js`: decorators run before their block's program, can replace/wrap the program's helper fn and mutate a `props` map. Internal `type decorator func(prog *boundProgram, props map[string]any, o *HelperOptions) (*boundProgram, error)`; harness registers test decorators from `specFuncs`. Built-in: `inline` (already used by Task 9 — refactor it onto this mechanism if that is a simplification, otherwise leave it; `ponytail:` note the choice).
-- [ ] **Step 4: regressions.json → 33/33.** Grab-bag; expect fixes across value.go/render.go. Add `msgAliases` entries as needed.
-- [ ] **Step 5: Commit** `feat: strict mode, decorators, regressions (whitespace 36, strict 22, blocks 39, regressions 33)`.
+- [x] **Step 4: regressions.json → 33/33.** Grab-bag; expect fixes across value.go/render.go. Add `msgAliases` entries as needed.
+- [x] **Step 5: Commit** `feat: strict mode, decorators, regressions (whitespace 36, strict 22, blocks 39, regressions 33)`.
 
 ---
 
