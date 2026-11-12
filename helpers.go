@@ -21,7 +21,8 @@ type Helper func(opts *HelperOptions) (any, error)
 // HelperOptions carries evaluated arguments and block closures. It is valid
 // only during the helper call. Retaining it is unsupported, but it never
 // touches other renders: a render that handed one to user code doesn't
-// recycle its state.
+// recycle its state. The render methods of a zero HelperOptions, which no
+// render passed, return an error.
 type HelperOptions struct {
 	Name string         // helper name as written in the template
 	Args []any          // evaluated positional args
@@ -87,7 +88,12 @@ func (o *HelperOptions) IsBlock() bool { return o.fn != nil || o.inverse != nil 
 func (o *HelperOptions) Fn() (string, error) { return o.FnWith(o.this) }
 
 // FnWith renders the block with ctx (JS options.fn(ctx)).
-func (o *HelperOptions) FnWith(ctx any) (string, error) { return o.s.renderString(o.fn, ctx) }
+func (o *HelperOptions) FnWith(ctx any) (string, error) {
+	if o.s == nil {
+		return "", errNoRender
+	}
+	return o.s.renderString(o.fn, ctx)
+}
 
 // FnTo renders the block with ctx and block params into w (JS
 // options.fn(ctx, {blockParams, data})). A non-nil dataVars adds a child
@@ -106,16 +112,31 @@ func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars m
 // gets paths[i] as its id ("undefined" when missing).
 // API change: new.
 func (o *HelperOptions) FnToPaths(w io.Writer, ctx any, blockParams []any, paths []string, dataVars map[string]any) error {
+	if o.s == nil {
+		return errNoRender
+	}
 	return o.s.renderTo(w, o.fn, ctx, bpFrame{vals: blockParams, ids: paths}, o.s.newFrame(dataVars))
 }
 
 // Inverse renders the {{else}} block with the helper's `this`.
-func (o *HelperOptions) Inverse() (string, error) { return o.s.renderString(o.inverse, o.this) }
+func (o *HelperOptions) Inverse() (string, error) {
+	if o.s == nil {
+		return "", errNoRender
+	}
+	return o.s.renderString(o.inverse, o.this)
+}
 
 // InverseTo renders the {{else}} block with ctx into w (JS options.inverse(ctx)).
 func (o *HelperOptions) InverseTo(w io.Writer, ctx any) error {
+	if o.s == nil {
+		return errNoRender
+	}
 	return o.s.renderTo(w, o.inverse, ctx, bpFrame{}, nil)
 }
+
+// errNoRender is what the render methods of a HelperOptions that no render
+// passed to a helper (a zero value) return.
+var errNoRender = errors.New("handlebars: HelperOptions is not from a render")
 
 // DataVar is the @name data variable visible to the helper.
 func (o *HelperOptions) DataVar(name string) any {

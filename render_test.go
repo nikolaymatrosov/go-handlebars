@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strings"
 	"sync"
@@ -366,6 +367,23 @@ func TestLoggerKeepsArgs(t *testing.T) {
 		}
 		if fmt.Sprint(kept) != "[a b]" {
 			t.Errorf("%s: kept args = %v, want [a b]", c.src, kept)
+		}
+	}
+}
+
+// A zero HelperOptions belongs to no render: its render methods fail
+// instead of panicking or rendering nothing.
+func TestHelperOptionsZeroValue(t *testing.T) {
+	for name, f := range map[string]func(o *HelperOptions) error{
+		"Fn":        func(o *HelperOptions) error { _, err := o.Fn(); return err },
+		"FnWith":    func(o *HelperOptions) error { _, err := o.FnWith(1); return err },
+		"Inverse":   func(o *HelperOptions) error { _, err := o.Inverse(); return err },
+		"FnTo":      func(o *HelperOptions) error { return o.FnTo(io.Discard, 1, nil, nil) },
+		"FnToPaths": func(o *HelperOptions) error { return o.FnToPaths(io.Discard, 1, nil, nil, map[string]any{}) },
+		"InverseTo": func(o *HelperOptions) error { return o.InverseTo(io.Discard, 1) },
+	} {
+		if err := f(&HelperOptions{}); err == nil {
+			t.Errorf("%s on a zero HelperOptions: nil error", name)
 		}
 	}
 }
