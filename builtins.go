@@ -109,7 +109,10 @@ func lookupHelper(o *HelperOptions) (any, error) {
 	}
 	field := "undefined"
 	if len(o.Args) > 1 {
-		field = string(appendValue(nil, o.Args[1], false, 1<<10))
+		var ok bool
+		if field, ok = o.Args[1].(string); !ok { // a string is used as is, not copied
+			field = string(appendValue(nil, o.Args[1], false, 1<<10))
+		}
 	}
 	v, _ := lookupProperty(o.Args[0], field)
 	return v, nil

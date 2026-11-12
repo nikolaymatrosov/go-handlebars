@@ -398,3 +398,37 @@ func TestStatementSizeOps(t *testing.T) {
 		}
 	}
 }
+
+// Every KiB of a long template string a statement hashes, compares or
+// copies costs an op, so a statement with a huge name can't do O(len)
+// work per op: path segments, string literals, hash keys, partial names
+// and inline-partial names of the same length.
+func TestLongNameOps(t *testing.T) {
+	k := strings.Repeat("k", 600<<10) // 600 ops per use
+	half := strings.Repeat("k", 300<<10)
+	for _, c := range []struct {
+		src    string
+		maxOps int
+	}{
+		{"{{m.[" + k + "]}}", 500},
+		{`{{lookup m "` + k + `"}}`, 500},
+		{"{{lookup m " + k + "=1}}", 500},
+		{"{{> p " + k + "=1}}", 500},
+		{"{{> [" + k + "]}}", 500},
+		// 300 to define, 300 to look up, 300 to compare the equal-length names
+		{`{{#*inline "` + half + `a"}}{{/inline}}{{> "` + half + `b"}}`, 750},
+	} {
+		tpl, err := ParseWithOptions(c.src, Options{Limits: Limits{MaxOps: c.maxOps}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tpl.RegisterPartial("p", ""); err != nil {
+			t.Fatal(err)
+		}
+		_, err = tpl.Render(map[string]any{"m": map[string]any{}})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%.24s...: err = %v, want ops LimitError", c.src, err)
+		}
+	}
+}

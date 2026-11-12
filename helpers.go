@@ -394,6 +394,9 @@ func (s *renderState) args(c *call, ctx any, o *HelperOptions) error {
 		o.Hash = make(map[string]any, len(c.hash))
 		for _, kv := range c.hash {
 			v, err := s.param(kv.value, ctx)
+			if err == nil {
+				err = s.steps(len(kv.key) >> 10)
+			}
 			if err != nil {
 				return err
 			}

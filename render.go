@@ -205,6 +205,18 @@ func (s *renderState) step() error {
 	return nil
 }
 
+// steps charges n ops. Besides one per item of work, a render charges
+// one per KiB of a long template string it hashes, compares or copies
+// (n = len >> 10), so CPU per op stays bounded however long names are.
+func (s *renderState) steps(n int) error {
+	for range n {
+		if err := s.step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // depthErr records and returns the MaxRenderDepth LimitError.
 func (s *renderState) depthErr() error {
 	s.depthHit = true
@@ -398,6 +410,9 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 	case *subExpr:
 		return s.expr(&n.call, ctx, false, nil, nil)
 	case *strLit:
+		if err := s.steps(len(n.value) >> 10); err != nil { // a key the callee hashes
+			return nil, err
+		}
 		if s.opts.StringParams {
 			return n.legacy, nil
 		}
@@ -418,10 +433,12 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 // site reports a strict use site (JS path.strict): the callee of a mustache,
 // block or helper call, whose last part must exist in strict mode.
 func (s *renderState) lookup(p *pathExpr, ctx any, site bool) (any, error) {
-	for range len(p.parts) - 1 { // each further segment is a property read
-		if err := s.step(); err != nil {
-			return nil, err
-		}
+	n := len(p.parts) - 1 // each further segment is a property read
+	for _, part := range p.parts {
+		n += len(part) >> 10 // hashed by the read
+	}
+	if err := s.steps(n); err != nil {
+		return nil, err
 	}
 	if s.opts.Strict || s.opts.AssumeObjects {
 		return s.lookupStrict(p, ctx, s.opts.Strict && site)

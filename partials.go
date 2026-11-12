@@ -123,6 +123,9 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 		return err
 	}
 	name, dynamic, err := s.partialName(n.name, ctx)
+	if err == nil {
+		err = s.steps(len(name) >> 10) // hashed by resolve
+	}
 	if err != nil {
 		return err
 	}
@@ -291,6 +294,9 @@ func (s *renderState) partialContext(n *partialNode, ctx any) (any, error) {
 	}
 	for _, kv := range n.hash {
 		v, err := s.param(kv.value, ctx)
+		if err == nil {
+			err = s.steps(len(kv.key) >> 10)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -305,7 +311,11 @@ func (s *renderState) partialContext(n *partialNode, ctx any) (any, error) {
 // partial call arbitrarily slow.
 func (s *renderState) resolve(name string, dynamic bool) (tg target, err error) {
 	for e := s.inlines; e != nil; e = e.next {
-		if err := s.step(); err != nil {
+		n := 1
+		if len(e.name) == len(name) { // compared byte by byte
+			n += len(name) >> 10
+		}
+		if err := s.steps(n); err != nil {
 			return tg, err
 		}
 		if e.name == name {
