@@ -48,7 +48,7 @@ func (o *outWriter) commit(mark int) error {
 func (o *outWriter) writeString(s string) error {
 	mark := len(o.buf)
 	if len(o.indents) > 0 {
-		appendIndented(o, s)
+		appendIndented(o, s, mark+o.max-*o.emitted)
 	} else {
 		o.buf = append(o.buf, s...)
 	}
@@ -64,7 +64,7 @@ func (o *outWriter) writeValue(v any, escape bool) error {
 	mark := len(o.buf)
 	if len(o.indents) > 0 {
 		o.tmp = appendValue(o.tmp[:0], v, escape, o.max-*o.emitted)
-		appendIndented(o, o.tmp)
+		appendIndented(o, o.tmp, mark+o.max-*o.emitted)
 	} else {
 		o.buf = appendValue(o.buf, v, escape, mark+o.max-*o.emitted)
 	}
@@ -72,10 +72,15 @@ func (o *outWriter) writeValue(v any, escape bool) error {
 }
 
 // appendIndented appends s, writing the owed indents before the first
-// byte of each line.
-func appendIndented[S string | []byte](o *outWriter, s S) {
+// byte of each line. It stops once buf is past limit (the caller's output
+// budget), which commit then reports: indents repeated on every line could
+// otherwise grow buf far beyond MaxOutputSize first.
+func appendIndented[S string | []byte](o *outWriter, s S, limit int) {
 	for len(s) > 0 {
 		for _, in := range o.indents[o.bol:] {
+			if len(o.buf) > limit {
+				return
+			}
 			o.buf = append(o.buf, in...)
 		}
 		o.bol = len(o.indents)

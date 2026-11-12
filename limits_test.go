@@ -347,3 +347,23 @@ func TestPanicStateRestored(t *testing.T) {
 		t.Errorf("got %.80q, %v\nwant %.80q", got, err, want.String())
 	}
 }
+
+// A standalone partial's indent repeats on every line it renders, so an
+// n-space indent over n lines (`<n spaces>{{> p}}` with p n newlines) is
+// n^2 bytes: the writer must stop at MaxOutputSize, not build it all first.
+func TestIndentBomb(t *testing.T) {
+	lines := strings.Repeat("\n", 1<<10)
+	for _, write := range []func(o *outWriter) error{
+		func(o *outWriter) error { return o.writeString(lines) },
+		func(o *outWriter) error { return o.writeValue(lines, false) },
+	} {
+		n := 0
+		o := &outWriter{emitted: &n, max: 1 << 10}
+		o.pushIndent(strings.Repeat(" ", 1<<10)) // 1 MiB indented
+		err := write(o)
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "output size" || cap(o.buf) > 1<<12 {
+			t.Errorf("err = %v, buffer grew to %d bytes", err, cap(o.buf))
+		}
+	}
+}
