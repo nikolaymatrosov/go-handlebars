@@ -128,6 +128,11 @@ type pathExpr struct {
 	// programs out, position bpIdx in its `as |...|` list.
 	bp             bool
 	bpDepth, bpIdx int
+	// legacy is the parse-time string compiler.js pushParam makes of this
+	// path as a param: under StringParams the string passed instead of its
+	// value; under TrackIDs its id, or for a block param the child path
+	// ("a.b" of x.a.b) appended to the param's id. "" when both are off.
+	legacy string
 }
 
 type (

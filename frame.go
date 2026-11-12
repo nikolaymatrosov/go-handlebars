@@ -18,6 +18,11 @@ type dataFrame struct {
 	// set nil block hides the enclosing one.
 	blockSet bool
 	block    *partialBlock
+
+	// contextPath is JS data.contextPath as TrackIDs builtins and partials
+	// set it; "" = unset (JS only ever sets an empty one where the
+	// inherited one is falsy too).
+	contextPath string
 }
 
 // newFrame is createFrame(options.data) extended with vars, so an empty
@@ -47,6 +52,9 @@ func (f *dataFrame) get(name string) (any, bool) {
 			case "last":
 				return f.last, true
 			}
+		}
+		if f.contextPath != "" && name == "contextPath" {
+			return f.contextPath, true
 		}
 		if f.blockSet && name == "partial-block" {
 			if f.block == nil {

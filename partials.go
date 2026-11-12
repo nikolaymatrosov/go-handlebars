@@ -59,7 +59,7 @@ func (t *Template) setPartial(name string, d partialDef, remove bool) {
 type closure struct {
 	prog   *program
 	depths []any
-	bps    [][]any
+	bps    []bpFrame
 	opts   *Options
 }
 
@@ -73,9 +73,9 @@ func (s *renderState) closure(p *program, depths []any, ownFrame bool) closure {
 	if ownFrame {
 		n++
 	}
-	bps := make([][]any, n)
+	bps := make([]bpFrame, n)
 	for i, f := range s.bps {
-		bps[i] = slices.Clone(f)
+		bps[i] = bpFrame{slices.Clone(f.vals), slices.Clone(f.ids)}
 	}
 	return closure{p, append(make([]any, 0, len(depths)), depths...), bps, s.opts}
 }
@@ -147,6 +147,19 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 			tg.block = block // the failover content
 		}
 	}
+	if s.opts.TrackIDs && s.data != nil { // JS throws a TypeError without data; we skip
+		// runtime.js invokePartial: options.data.contextPath = options.ids[0]
+		// || options.data.contextPath, on the caller's frame, as JS does.
+		// ponytail: ids are strings, so a path named [null]/[undefined]
+		// reads as falsy here; keep the JS id kinds if that ever matters.
+		id := "" // the implicit context's
+		if len(n.params) > 0 {
+			id = s.paramID(n.params[0])
+		}
+		if id != "" && id != "null" && id != "undefined" {
+			s.data.contextPath = id
+		}
+	}
 	if !tg.found() {
 		return &Error{Message: "The partial " + name + " could not be found"}
 	}
@@ -215,14 +228,14 @@ func (s *renderState) invoke(tg target, ctx any, name string) error {
 	case tg.inline != nil:
 		c := *tg.inline
 		s.depths, s.bps, s.opts = c.depths, c.bps, c.opts
-		return s.renderProgramBP(c.prog, ctx, nil)
+		return s.renderProgramBP(c.prog, ctx, bpFrame{})
 	}
 	b := tg.block // partialBlockWrapper: the block runs with the @partial-block it was written under
 	s.depths, s.bps, s.opts, s.inlines = b.depths, b.bps, b.opts, b.inlines
 	if s.data != nil {
 		s.data = &dataFrame{parent: s.data, blockSet: true, block: b.outer}
 	}
-	return s.renderProgramBP(b.prog, ctx, nil)
+	return s.renderProgramBP(b.prog, ctx, bpFrame{})
 }
 
 // partialName is a static name's original, or the dynamic (subexpression)
@@ -252,6 +265,8 @@ func (s *renderState) partialContext(n *partialNode, ctx any) (any, error) {
 		}
 	} else if s.opts.ExplicitPartialContext {
 		pctx = nil
+	} else if s.opts.StringParams { // the implicit context param, {parts: []}, as a string param
+		pctx = ""
 	}
 	if n.hash == nil {
 		return pctx, nil

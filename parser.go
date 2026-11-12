@@ -414,6 +414,25 @@ func (p *parser) path(start token, data bool) (node, error) {
 	if !data && pe.depth == 0 && !pe.scoped && len(pe.parts) > 0 {
 		pe.bpDepth, pe.bpIdx, pe.bp = p.blockParamIndex(pe.parts[0])
 	}
+	switch { // compiler.js pushParam; stringParams wins, as there
+	case p.opts.StringParams: // value.replace(/^(\.?\.\/)*/g, '').replace(/\//g, '.')
+		s := pe.original
+		for strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") {
+			s = s[strings.IndexByte(s, '/')+1:]
+		}
+		pe.legacy = strings.ReplaceAll(s, "/", ".")
+	case p.opts.TrackIDs && pe.bp: // pushId('BlockParam', ..., parts.slice(1).join('.'))
+		pe.legacy = strings.Join(pe.parts[1:], ".")
+	case p.opts.TrackIDs: // original.replace(/^this(?:\.|$)/, '').replace(/^\.\//, '').replace(/^\.$/, '')
+		s := pe.original
+		if strings.HasPrefix(s, "this") && (len(s) == 4 || s[4] == '.') {
+			s = s[min(5, len(s)):]
+		}
+		if s = strings.TrimPrefix(s, "./"); s == "." {
+			s = ""
+		}
+		pe.legacy = s
+	}
 	return pe, nil
 }
 

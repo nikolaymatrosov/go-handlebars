@@ -46,9 +46,9 @@ var specGate = map[string]int{
 	"partials.json":           61,
 	"regressions.json":        33,
 	"strict.json":             22,
-	"string-params.json":      0,
-	"subexpressions.json":     16,
-	"track-ids.json":          0,
+	"string-params.json":      8,
+	"subexpressions.json":     18,
+	"track-ids.json":          17,
 	"whitespace-control.json": 36,
 }
 
@@ -489,10 +489,21 @@ func runSpecFile(t *testing.T, name string, n int, label func(i int) string, run
 		}
 	})
 	t.Logf("%s: %d/%d pass, %d fail, %d skip", name, count[specPass], count[specPass]+count[specFail]+count[specSkip], count[specFail], count[specSkip])
-	if g := specGate[name]; os.Getenv("HBSPEC_FILE") == "" && os.Getenv("HBSPEC_IT") == "" && count[specPass] < g {
+	if os.Getenv("HBSPEC_FILE") != "" || os.Getenv("HBSPEC_IT") != "" {
+		return
+	}
+	specTally[name] = count
+	if g := specGate[name]; count[specPass] < g {
 		t.Errorf("%s: %d pass is below gate %d", name, count[specPass], g)
 	}
 }
+
+// specTally holds each file's [pass, fail, skip] from unfiltered runs, for
+// TestSpecTotal.
+var specTally = map[string][3]int{}
+
+// specTotal is the corpus size: TestSpecTotal requires all of it to pass.
+const specTotal = 632
 
 func readSpec(t *testing.T, path string, into any) {
 	raw, err := os.ReadFile(path)
@@ -567,4 +578,24 @@ func TestSpecRender(t *testing.T) {
 // expectsError: exception is true, or a string/regex of the expected error.
 func (tc specTest) expectsError() bool {
 	return tc.Exception != nil && tc.Exception != false
+}
+
+// TestSpecTotal runs after the spec runners (it is declared after them)
+// and requires the whole corpus to pass, so a regression fails even if a
+// gate was miscounted. It skips when a filter (or -shuffle) left a file
+// unrun.
+func TestSpecTotal(t *testing.T) {
+	if len(specTally) != len(specGate) {
+		t.Skipf("ran %d of %d spec files", len(specTally), len(specGate))
+	}
+	var sum [3]int
+	for _, c := range specTally {
+		for i, n := range c {
+			sum[i] += n
+		}
+	}
+	t.Logf("spec total: %d/%d pass, %d fail, %d skip", sum[specPass], specTotal, sum[specFail], sum[specSkip])
+	if sum[specPass] != specTotal || sum[specFail] != 0 || sum[specSkip] != 0 {
+		t.Errorf("spec: %d pass, %d fail, %d skip; want %d pass, 0 fail, 0 skip", sum[specPass], sum[specFail], sum[specSkip], specTotal)
+	}
 }

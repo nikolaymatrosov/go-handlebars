@@ -81,11 +81,23 @@ func withHelper(o *HelperOptions) (any, error) {
 	if isEmpty(ctx) {
 		return nil, o.s.renderProgram(o.inverse, o.this)
 	}
-	var bp []any
-	if o.fn != nil && len(o.fn.blockParams) > 0 {
-		bp = []any{ctx}
+	var df *dataFrame
+	id, tracked := o.id0()
+	if tracked && o.s.data != nil { // data.contextPath = appendContextPath(...)
+		df = &dataFrame{parent: o.s.data, contextPath: appendContextPath(o.s.data, id)}
 	}
-	return nil, o.s.renderProgramBP(o.fn, ctx, bp)
+	var bp bpFrame
+	if o.fn != nil && len(o.fn.blockParams) > 0 {
+		bp.vals = []any{ctx}
+		if tracked { // blockParams.path = [data && data.contextPath]
+			path := "undefined"
+			if df != nil {
+				path = df.contextPath
+			}
+			bp.ids = []string{path}
+		}
+	}
+	return nil, o.s.renderFrame(o.fn, ctx, bp, df)
 }
 
 func lookupHelper(o *HelperOptions) (any, error) {
@@ -163,6 +175,12 @@ type eachRun struct {
 	frame *dataFrame
 	bp    []any
 	n     int
+	// trackIds: an item's path is JS contextPath + field, built in path
+	// after its first pathLen bytes (the contextPath); ids is the block
+	// params' path, [contextPath + field, null].
+	path    []byte // nil: not tracking
+	pathLen int
+	ids     []string
 }
 
 func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
@@ -181,8 +199,22 @@ func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
 			r.bp[1] = key
 		}
 	}
+	if r.path != nil {
+		if arr {
+			r.path = strconv.AppendInt(r.path[:r.pathLen], int64(idx), 10)
+		} else {
+			r.path = append(r.path[:r.pathLen], key...)
+		}
+		path := string(r.path)
+		if r.frame != nil {
+			r.frame.contextPath = path
+		}
+		if r.ids != nil {
+			r.ids[0] = path
+		}
+	}
 	r.n++
-	return s.renderFrame(r.o.fn, v, r.bp, r.frame)
+	return s.renderFrame(r.o.fn, v, bpFrame{r.bp, r.ids}, r.frame)
 }
 
 // eachHelper is helpers/each.js. As in JS only objects iterate (arrays,
@@ -201,6 +233,16 @@ func eachHelper(o *HelperOptions) (any, error) {
 	}
 	if o.fn != nil && len(o.fn.blockParams) > 0 {
 		r.bp = make([]any, 2)
+	}
+	if id, ok := o.id0(); ok { // trackIds
+		r.path = []byte("undefined") // without data JS leaves contextPath undefined: undefined + field
+		if r.frame != nil {
+			r.path = append([]byte(appendContextPath(o.s.data, id)), '.')
+		}
+		r.pathLen = len(r.path)
+		if r.bp != nil {
+			r.ids = []string{"", "null"}
+		}
 	}
 	if !isNull(ctx) {
 		err = forOwn(ctx, r.iter)

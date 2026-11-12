@@ -2,6 +2,7 @@ package handlebars
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -392,6 +393,126 @@ var specFuncs = map[string]any{
 		url, _ := lookupProperty(o.Ctx(), "url")
 		return jsStr(name) + " (" + jsStr(url) + ") ", nil
 	},
+
+	// string-params.json (and subexpressions.json's string params tests)
+	"c63bb0149dad": func(o *HelperOptions) (any, error) { // 'HELP ME MY BOSS ' + passiveVoice + ' ' + noun
+		return "HELP ME MY BOSS " + jsStr(arg(o, 0)) + " " + jsStr(arg(o, 1)), nil
+	},
+	"c0693787c25c": func(o *HelperOptions) (any, error) { // ... + noun + ': ' + options.fn(this)
+		s, err := o.Fn()
+		return "HELP ME MY BOSS " + jsStr(arg(o, 0)) + " " + jsStr(arg(o, 1)) + ": " + s, err
+	},
+	"d0db63095849": func(o *HelperOptions) (any, error) { // 'STOP ME FROM READING HACKER NEWS I ' + options.contexts[0][desire] + ' ' + noun
+		v, _ := lookupProperty(index(legacy(o).Contexts, 0), jsStr(arg(o, 0)))
+		return "STOP ME FROM READING HACKER NEWS I " + jsStr(v) + " " + jsStr(arg(o, 1)), nil
+	},
+	"d8da07322587": func(o *HelperOptions) (any, error) { // options.fn(options.contexts[0][context])
+		v, _ := lookupProperty(index(legacy(o).Contexts, 0), jsStr(arg(o, 0)))
+		return o.FnWith(v)
+	},
+	"fa63a8f5ad15": func(o *HelperOptions) (any, error) { // equal(options.types[0], 'StringLiteral'), ...; return 'Helper called'
+		return "Helper called", equal(index(legacy(o).Types, 0), "StringLiteral", index(legacy(o).Types, 1), "PathExpression", index(legacy(o).Types, 2), "BooleanLiteral",
+			arg(o, 0), "need", arg(o, 1), "dad.joke", arg(o, 2), true, arg(o, 3), false)
+	},
+	"680aa5aa9c4f": func(o *HelperOptions) (any, error) { // equal(exclamation, 'he.says'), hashTypes/hash checks; return 'Helper called'
+		return "Helper called", equal(arg(o, 0), "he.says", index(legacy(o).Types, 0), "PathExpression",
+			legacy(o).HashTypes["desire"], "StringLiteral", legacy(o).HashTypes["noun"], "PathExpression", legacy(o).HashTypes["bool"], "BooleanLiteral",
+			o.Hash["desire"], "need", o.Hash["noun"], "dad.joke", o.Hash["bool"], true)
+	},
+	"f25216650542": func(o *HelperOptions) (any, error) { // ... + options.contexts[0][desire] + ' ' + noun + ' ' + options.fn(this)
+		v, _ := lookupProperty(index(legacy(o).Contexts, 0), jsStr(arg(o, 0)))
+		s, err := o.Fn()
+		return "STOP ME FROM READING HACKER NEWS I " + jsStr(v) + " " + jsStr(arg(o, 1)) + " " + s, err
+	},
+	"610f8b9e6604": func(o *HelperOptions) (any, error) { return "WITH", nil }, // function () { return 'WITH'; }
+	"81831e893336": func(o *HelperOptions) (any, error) { return "VIEW", nil }, // function () { return 'VIEW'; }
+	"facda621d588": func(o *HelperOptions) (any, error) { // equal(bar, '@bar'); equal(options.types[0], 'PathExpression'); return 'Foo!'
+		return "Foo!", equal(arg(o, 0), "@bar", index(legacy(o).Types, 0), "PathExpression")
+	},
+	"98bbb426fbe2": func(o *HelperOptions) (any, error) { // equals(a, 'foo'); types are [SubExpression, PathExpression]; return a + b
+		return jsAdd(arg(o, 0), arg(o, 1)), equal(arg(o, 0), "foo", len(legacy(o).Types), 2, index(legacy(o).Types, 0), "SubExpression", index(legacy(o).Types, 1), "PathExpression")
+	},
+	"61a907a40d94": func(o *HelperOptions) (any, error) { // types are [PathExpression]; return a
+		return arg(o, 0), equal(len(legacy(o).Types), 1, index(legacy(o).Types, 0), "PathExpression")
+	},
+	"e101e678717d": func(o *HelperOptions) (any, error) { // equals(options.hashTypes.fun, 'SubExpression'); return 'val is ' + options.hash.fun
+		return "val is " + jsStr(o.Hash["fun"]), equal(legacy(o).HashTypes["fun"], "SubExpression")
+	},
+	"3297100aee77": func(o *HelperOptions) (any, error) { return "BORK", nil }, // function () { return 'BORK'; }
+
+	// track-ids.json. JS null/true ids are "null"/"true" (see LegacyParams.IDs).
+	"1ccf18da2b6d": func(o *HelperOptions) (any, error) { // equal(options.ids, undefined); equal(options.hashIds, undefined); return 'success'
+		if o.Legacy != nil {
+			return nil, errors.New("equal: ids/hashIds set without trackIds")
+		}
+		return "success", nil
+	},
+	"14cef3b801c1": func(o *HelperOptions) (any, error) { // ids are [is.a, slave.driver]; 'HELP ME MY BOSS ' + ids[0] + ':' + passiveVoice + ' ' + ids[1] + ':' + noun
+		return bossIDs(o), equal(index(legacy(o).IDs, 0), "is.a", index(legacy(o).IDs, 1), "slave.driver")
+	},
+	"37a6c6d30257": func(o *HelperOptions) (any, error) { // hashIds are {bat: is.a, baz: slave.driver}
+		return "HELP ME MY BOSS " + legacy(o).HashIDs["bat"] + ":" + jsStr(o.Hash["bat"]) + " " + legacy(o).HashIDs["baz"] + ":" + jsStr(o.Hash["baz"]),
+			equal(legacy(o).HashIDs["bat"], "is.a", legacy(o).HashIDs["baz"], "slave.driver")
+	},
+	"8dd9d9364650": func(o *HelperOptions) (any, error) { // ids are [is.a, ../slave.driver, is.a, '']
+		return bossIDs(o), equal(index(legacy(o).IDs, 0), "is.a", index(legacy(o).IDs, 1), "../slave.driver", index(legacy(o).IDs, 2), "is.a", index(legacy(o).IDs, 3), "")
+	},
+	"8c14b7f6a8f6": func(o *HelperOptions) (any, error) { // ids are [@is.a, @slave.driver]
+		return bossIDs(o), equal(index(legacy(o).IDs, 0), "@is.a", index(legacy(o).IDs, 1), "@slave.driver")
+	},
+	"f0ab6f71bdcb": func(o *HelperOptions) (any, error) { // ids[0], ids[1], hashIds.key are null
+		return "HELP ME MY BOSS " + jsStr(arg(o, 0)) + " " + jsStr(arg(o, 1)) + " " + jsStr(o.Hash["key"]),
+			equal(index(legacy(o).IDs, 0), "null", index(legacy(o).IDs, 1), "null", legacy(o).HashIDs["key"], "null")
+	},
+	"e69260e14a92": func(o *HelperOptions) (any, error) { return 1.0, nil }, // function () { return 1; }
+	"b631743b07fe": func(o *HelperOptions) (any, error) { // equal(options.ids[0], true); return 'HELP ME MY BOSS ' + passiveVoice
+		return "HELP ME MY BOSS " + jsStr(arg(o, 0)), equal(index(legacy(o).IDs, 0), "true")
+	},
+	"af10f4358d8e": func(o *HelperOptions) (any, error) { // blockParams = [this.is]; blockParams.path = ['zomg']; options.fn(this, {blockParams})
+		var sb strings.Builder
+		err := o.s.renderTo(&sb, o.fn, o.Ctx(), bpFrame{vals: []any{o.Lookup("is")}, ids: []string{"zomg"}}, nil)
+		return sb.String(), err
+	},
+	"0654a8ee3da3": func(o *HelperOptions) (any, error) { // ids are [zomg.a, slave.driver, zomg]
+		return bossIDs(o), equal(index(legacy(o).IDs, 0), "zomg.a", index(legacy(o).IDs, 1), "slave.driver", index(legacy(o).IDs, 2), "zomg")
+	},
+	"599e616d20e9": func(o *HelperOptions) (any, error) { // name + ':' + options.ids[0] + '\n'
+		return jsStr(arg(o, 0)) + ":" + jsStr(index(legacy(o).IDs, 0)) + "\n", nil
+	},
+	"e6db14dfaefd": func(o *HelperOptions) (any, error) { // name + ':' + options.data.contextPath + '\n'
+		return jsStr(arg(o, 0)) + ":" + jsStr(o.DataVar("contextPath")) + "\n", nil
+	},
+}
+
+// legacy is o.Legacy, empty when unset.
+func legacy(o *HelperOptions) LegacyParams {
+	if o.Legacy == nil {
+		return LegacyParams{}
+	}
+	return *o.Legacy
+}
+
+// index is JS s[i] (undefined past the end).
+func index[T any](s []T, i int) any {
+	if i < len(s) {
+		return s[i]
+	}
+	return nil
+}
+
+// equal is a run of the spec's equal(got, want) asserts, as got, want pairs.
+func equal(pairs ...any) error {
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if pairs[i] != pairs[i+1] {
+			return fmt.Errorf("equal #%d: got %#v, want %#v", i/2, pairs[i], pairs[i+1])
+		}
+	}
+	return nil
+}
+
+// bossIDs is 'HELP ME MY BOSS ' + ids[0] + ':' + passiveVoice + ' ' + ids[1] + ':' + noun.
+func bossIDs(o *HelperOptions) string {
+	return "HELP ME MY BOSS " + jsStr(index(legacy(o).IDs, 0)) + ":" + jsStr(arg(o, 0)) + " " + jsStr(index(legacy(o).IDs, 1)) + ":" + jsStr(arg(o, 1))
 }
 
 // jsGlobalValue is the JS global `value` one helper keeps (undefined: nil).

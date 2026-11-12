@@ -3,6 +3,7 @@ package handlebars
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -127,7 +128,7 @@ func TestRenderLimits(t *testing.T) {
 // passes (ctx, [1, {c: "C"}]) to its block, the way builtins will.
 func TestRenderBlockParams(t *testing.T) {
 	bp := func(o *HelperOptions) (any, error) {
-		return nil, o.s.renderProgramBP(o.fn, o.Ctx(), []any{"A", map[string]any{"c": "C"}})
+		return nil, o.s.renderProgramBP(o.fn, o.Ctx(), bpFrame{vals: []any{"A", map[string]any{"c": "C"}}})
 	}
 	cases := []struct{ src, want string }{
 		{"{{#bp as |a b|}}{{a}}{{b.c}}{{/bp}}", "AC"},
@@ -559,6 +560,58 @@ func TestSparseHoles(t *testing.T) {
 		}
 		if got, err := tpl.Render(map[string]any{"a": arr}); got != want || err != nil {
 			t.Errorf("%s = %q, %v; want %q", src, got, err, want)
+		}
+	}
+}
+
+// TestLegacyOptions pins StringParams/TrackIDs behavior the spec corpus
+// doesn't reach (partials, data off, Go block params, builtins on strings).
+func TestLegacyOptions(t *testing.T) {
+	off := false
+	track, str := Options{TrackIDs: true}, Options{StringParams: true}
+	cases := []struct {
+		opts      Options
+		src, want string
+	}{
+		{track, "{{#each arr as |v i|}}{{ids v.n i}}{{/each}}", "arr.0.n,null"},
+		{Options{TrackIDs: true, Data: &off}, "{{#each arr as |v i|}}{{ids v.n i}}{{/each}}", "undefined0.n,null"}, // JS contextPath stays undefined
+		{track, "{{> p foo}}{{cp}}", "foo;foo"},                                                                    // invokePartial sets the caller's frame
+		{track, `{{> p "x"}}{{cp}}`, ";"},                                                                          // a literal's null id keeps it
+		{track, "{{#with foo}}{{#with this}}{{cp}}{{/with}}{{/with}}", "foo."},
+		{track, `{{#with "lit"}}{{cp}}{{/with}}`, "null"},
+		{track, "{{#bp as |x|}}{{ids x.y}}{{/bp}}", "undefined.y"}, // FnTo passes no blockParams.path
+		{str, "{{args ../a ./b c/d this . null undefined 1 @x}}",
+			"[a b c.d this .   1 @x] [PathExpression PathExpression PathExpression PathExpression PathExpression NullLiteral UndefinedLiteral NumberLiteral PathExpression]"},
+		{str, "{{> q foo}}|{{> q}}", "foo|"}, // the implicit partial context is a string param too
+		{str, "{{#if nope}}y{{else}}n{{/if}}", "y"},
+		{Options{StringParams: true, TrackIDs: true}, "{{ids foo}}", ""}, // stringParams wins, as in pushParam
+	}
+	for _, c := range cases {
+		tpl, err := ParseWithOptions(c.src, c.opts)
+		if err != nil {
+			t.Fatal(c.src, err)
+		}
+		tpl.RegisterHelper("ids", func(o *HelperOptions) (any, error) {
+			if o.Legacy == nil {
+				return "", nil
+			}
+			return strings.Join(o.Legacy.IDs, ","), nil
+		})
+		tpl.RegisterHelper("cp", func(o *HelperOptions) (any, error) { return o.DataVar("contextPath"), nil })
+		tpl.RegisterHelper("args", func(o *HelperOptions) (any, error) { return fmt.Sprint(o.Args, o.Legacy.Types), nil })
+		tpl.RegisterHelper("bp", func(o *HelperOptions) (any, error) {
+			var sb strings.Builder
+			err := o.FnTo(&sb, o.Ctx(), []any{map[string]any{"y": 1}}, nil)
+			return sb.String(), err
+		})
+		for name, src := range map[string]string{"p": "{{cp}};", "q": "{{this}}"} {
+			if err := tpl.RegisterPartial(name, src); err != nil {
+				t.Fatal(err)
+			}
+		}
+		data := map[string]any{"arr": []any{map[string]any{"n": 1}}, "foo": map[string]any{"bar": "x"}}
+		if got, err := tpl.Render(data); err != nil || got != c.want {
+			t.Errorf("%s = %q, %v; want %q", c.src, got, err, c.want)
 		}
 	}
 }

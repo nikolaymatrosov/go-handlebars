@@ -25,9 +25,46 @@ type HelperOptions struct {
 	Args []any          // evaluated positional args
 	Hash map[string]any // evaluated hash args; nil when the call has none
 
+	// Legacy is what StringParams or TrackIDs add (JS options.types, ids,
+	// ...) to a call that evaluates arguments: a helper with params, hash
+	// or as a subexpression, or a decorator. nil when both are off and for
+	// a bare {{name}} call.
+	// API change: new; one pointer, so HelperOptions stays as small when
+	// both options are off.
+	Legacy *LegacyParams
+
 	s           *renderState
 	this        any      // JS `this`
 	fn, inverse *program // block programs; nil = none (container.noop)
+}
+
+// LegacyParams are what the legacy compile options add to a helper's
+// options (compiler.js setupParams).
+// API change: new.
+type LegacyParams struct {
+	// Under StringParams a path argument is passed as its source string
+	// ("../a/b" as "a.b", undefined/null as ""). Types[i] is the JS AST type
+	// of argument i ("PathExpression", "StringLiteral", "NumberLiteral",
+	// "BooleanLiteral", "UndefinedLiteral", "NullLiteral", "SubExpression");
+	// Contexts[i] is the context its path is relative to.
+	Types        []string
+	HashTypes    map[string]string
+	Contexts     []any
+	HashContexts map[string]any
+	// Under TrackIDs (when StringParams is off), IDs[i] is JS
+	// options.ids[i] as a string: a path argument's path ("" for this), a
+	// block param's recorded path, "null" for a literal and "true" for a
+	// subexpression.
+	IDs     []string
+	HashIDs map[string]string
+}
+
+// id0 is JS options.ids[0]; ok is false when options.ids is unset.
+func (o *HelperOptions) id0() (id string, ok bool) {
+	if o.Legacy == nil || len(o.Legacy.IDs) == 0 {
+		return "", false
+	}
+	return o.Legacy.IDs[0], true
 }
 
 // Ctx is the helper's `this`: the current context, or an empty object when
@@ -50,7 +87,7 @@ func (o *HelperOptions) FnWith(ctx any) (string, error) { return o.s.renderStrin
 // it). The bytes count against MaxOutputSize;
 // w is the helper's own sink, not the template's output.
 func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars map[string]any) error {
-	return o.s.renderTo(w, o.fn, ctx, blockParams, o.s.newFrame(dataVars))
+	return o.s.renderTo(w, o.fn, ctx, bpFrame{vals: blockParams}, o.s.newFrame(dataVars))
 }
 
 // Inverse renders the {{else}} block with the helper's `this`.
@@ -58,7 +95,7 @@ func (o *HelperOptions) Inverse() (string, error) { return o.s.renderString(o.in
 
 // InverseTo renders the {{else}} block with ctx into w (JS options.inverse(ctx)).
 func (o *HelperOptions) InverseTo(w io.Writer, ctx any) error {
-	return o.s.renderTo(w, o.inverse, ctx, nil, nil)
+	return o.s.renderTo(w, o.inverse, ctx, bpFrame{}, nil)
 }
 
 // DataVar is the @name data variable visible to the helper.
@@ -355,7 +392,107 @@ func (s *renderState) args(c *call, ctx any, o *HelperOptions) error {
 			o.Hash[kv.key] = v
 		}
 	}
+	switch {
+	case s.opts.StringParams:
+		s.stringParams(c, ctx, o)
+	case s.opts.TrackIDs:
+		s.trackIDs(c, o)
+	}
 	return nil
+}
+
+// stringParams sets o's types and contexts (JS setupParams under
+// stringParams: pushStringParam's type and getContext(val.depth || 0)).
+func (s *renderState) stringParams(c *call, ctx any, o *HelperOptions) {
+	l := &LegacyParams{Types: make([]string, len(c.params)), Contexts: make([]any, len(c.params))}
+	for i, n := range c.params {
+		l.Types[i], l.Contexts[i] = nodeType(n), s.paramContext(n, ctx)
+	}
+	if c.hash != nil {
+		l.HashTypes, l.HashContexts = make(map[string]string, len(c.hash)), make(map[string]any, len(c.hash))
+		for _, kv := range c.hash {
+			l.HashTypes[kv.key], l.HashContexts[kv.key] = nodeType(kv.value), s.paramContext(kv.value, ctx)
+		}
+	}
+	o.Legacy = l
+}
+
+// paramContext is JS depths[val.depth] (depth0 for 0) for param n.
+func (s *renderState) paramContext(n node, ctx any) any {
+	p, ok := n.(*pathExpr)
+	if !ok || p.depth == 0 {
+		return ctx
+	}
+	if i := len(s.depths) - 1 - p.depth; i >= 0 {
+		return s.depths[i]
+	}
+	return nil
+}
+
+// nodeType is the JS AST type of param n.
+func nodeType(n node) string {
+	switch n.(type) {
+	case *pathExpr:
+		return "PathExpression"
+	case *subExpr:
+		return "SubExpression"
+	case *strLit:
+		return "StringLiteral"
+	case *numLit:
+		return "NumberLiteral"
+	case *boolLit:
+		return "BooleanLiteral"
+	case *undefinedLit:
+		return "UndefinedLiteral"
+	}
+	return "NullLiteral"
+}
+
+// trackIDs sets o's ids (JS setupParams under trackIds).
+func (s *renderState) trackIDs(c *call, o *HelperOptions) {
+	l := &LegacyParams{IDs: make([]string, len(c.params))}
+	for i, n := range c.params {
+		l.IDs[i] = s.paramID(n)
+	}
+	if c.hash != nil {
+		l.HashIDs = make(map[string]string, len(c.hash))
+		for _, kv := range c.hash {
+			l.HashIDs[kv.key] = s.paramID(kv.value)
+		}
+	}
+	o.Legacy = l
+}
+
+// paramID is javascript-compiler.js pushId for param n, as a string: a
+// path's parse-time id; for a block param, its frame's recorded path
+// (JS blockParams[d].path[i]; "undefined" when the frame has none) plus
+// "." + the child path; "true" for a subexpression; "null" for a literal.
+func (s *renderState) paramID(n node) string {
+	switch n := n.(type) {
+	case *subExpr:
+		return "true"
+	case *pathExpr:
+		if !n.bp {
+			return n.legacy
+		}
+		id := "undefined" // JS throws a TypeError reading the missing path; we stay lenient like the value lookup
+		if i := len(s.bps) - 1 - n.bpDepth; i >= 0 && n.bpIdx < len(s.bps[i].ids) {
+			id = s.bps[i].ids[n.bpIdx]
+		}
+		if n.legacy == "" {
+			return id
+		}
+		return strings.Join([]string{id, n.legacy}, ".")
+	}
+	return "null"
+}
+
+// appendContextPath is utils.js appendContextPath(data.contextPath, id).
+func appendContextPath(data *dataFrame, id string) string {
+	if cp, _ := data.get("contextPath"); jsTruthy(cp) {
+		return strings.Join([]string{jsKey(cp), id}, ".")
+	}
+	return id
 }
 
 // helperThis is the JS helper call context: depth0 != null ? depth0 : nullContext.
@@ -386,12 +523,19 @@ func blockHelperMissing(o *HelperOptions) (any, error) {
 	case v == false || isNull(v):
 		return nil, s.renderProgram(o.inverse, o.this)
 	}
+	// JS options.ids is [] here (truthy) whenever trackIds is on.
 	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
 		if rv.Len() == 0 {
 			return nil, s.renderProgram(o.inverse, o.this)
 		}
+		if s.opts.TrackIDs {
+			o.Legacy = &LegacyParams{IDs: []string{o.Name}}
+		}
 		h, builtin := s.helper("each") // JS instance.helpers.each, so an override applies
 		return s.callHelper("each", h, builtin, o)
+	}
+	if s.opts.TrackIDs && s.data != nil {
+		return nil, s.renderFrame(o.fn, v, bpFrame{}, &dataFrame{parent: s.data, contextPath: appendContextPath(s.data, o.Name)})
 	}
 	return nil, s.renderProgram(o.fn, v)
 }

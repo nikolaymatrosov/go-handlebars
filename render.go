@@ -119,9 +119,9 @@ type renderState struct {
 	depths []any
 	depth  int // nested block programs and partial expansions
 	// bps is the runtime.js blockParams chain: one frame per program being
-	// rendered, innermost last (nil when the caller passed none). A path with
-	// pathExpr.bp set reads bps[len-1-bpDepth][bpIdx].
-	bps [][]any
+	// rendered, innermost last (empty when the caller passed none). A path
+	// with pathExpr.bp set reads bps[len-1-bpDepth].vals[bpIdx].
+	bps []bpFrame
 	// data is the current @data frame (JS options.data); nil when
 	// Options.Data is false.
 	data *dataFrame
@@ -195,12 +195,20 @@ func (s *renderState) step() error {
 // runtime.js wrapProgram closure: ctx becomes the new depths[0] unless it
 // equals the current one. Nesting is bounded by MaxRenderDepth.
 func (s *renderState) renderProgram(p *program, ctx any) error {
-	return s.renderProgramBP(p, ctx, nil)
+	return s.renderProgramBP(p, ctx, bpFrame{})
+}
+
+// bpFrame is the block params a caller passes to a program (JS
+// options.fn(ctx, {blockParams})); ids is their JS blockParams.path, which
+// TrackIDs reads. nil ids: no path (Go helpers can't pass one).
+type bpFrame struct {
+	vals []any
+	ids  []string
 }
 
 // renderProgramBP is renderProgram with the block params the caller passes
-// to the program (JS options.fn(ctx, {blockParams})).
-func (s *renderState) renderProgramBP(p *program, ctx any, blockParams []any) error {
+// to the program.
+func (s *renderState) renderProgramBP(p *program, ctx any, blockParams bpFrame) error {
 	if p == nil {
 		return nil // container.noop
 	}
@@ -229,7 +237,7 @@ func (s *renderState) renderProgramBP(p *program, ctx any, blockParams []any) er
 
 // renderFrame is renderProgramBP with df as the block's @data frame (JS
 // options.data); a nil df keeps the enclosing one.
-func (s *renderState) renderFrame(p *program, ctx any, blockParams []any, df *dataFrame) error {
+func (s *renderState) renderFrame(p *program, ctx any, blockParams bpFrame, df *dataFrame) error {
 	if df == nil {
 		return s.renderProgramBP(p, ctx, blockParams)
 	}
@@ -245,7 +253,7 @@ func (s *renderState) renderString(p *program, ctx any) (string, error) {
 	if p == nil {
 		return "", nil
 	}
-	buf, err := s.renderSub(nil, p, ctx, nil, nil)
+	buf, err := s.renderSub(nil, p, ctx, bpFrame{}, nil)
 	str := ""
 	if err == nil {
 		str = string(buf)
@@ -255,7 +263,7 @@ func (s *renderState) renderString(p *program, ctx any) (string, error) {
 }
 
 // renderTo renders p with ctx and block params into w.
-func (s *renderState) renderTo(w io.Writer, p *program, ctx any, blockParams []any, df *dataFrame) error {
+func (s *renderState) renderTo(w io.Writer, p *program, ctx any, blockParams bpFrame, df *dataFrame) error {
 	if p == nil {
 		return nil
 	}
@@ -268,7 +276,7 @@ func (s *renderState) renderTo(w io.Writer, p *program, ctx any, blockParams []a
 // render's byte budget and flushes to w (nil: everything stays in the
 // returned buffer). Each call is one op, so a helper looping over an empty
 // block is still bounded by MaxOps.
-func (s *renderState) renderSub(w io.Writer, p *program, ctx any, blockParams []any, df *dataFrame) ([]byte, error) {
+func (s *renderState) renderSub(w io.Writer, p *program, ctx any, blockParams bpFrame, df *dataFrame) ([]byte, error) {
 	if err := s.step(); err != nil {
 		return nil, err
 	}
@@ -354,9 +362,14 @@ func errAt(n node, msg string) error {
 }
 
 // param evaluates a helper argument; paths are looked up, never called.
+// Under StringParams (compiler.js pushParam) a path is its string form and
+// undefined/null are "".
 func (s *renderState) param(n node, ctx any) (any, error) {
 	switch n := n.(type) {
 	case *pathExpr:
+		if s.opts.StringParams {
+			return n.legacy, nil
+		}
 		return s.lookup(n, ctx, false)
 	case *subExpr:
 		return s.expr(&n.call, ctx, false, nil, nil)
@@ -366,6 +379,9 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 		return n.value, nil
 	case *boolLit:
 		return n.value, nil
+	}
+	if s.opts.StringParams { // val.original || ''
+		return "", nil
 	}
 	return nil, nil // undefined, null
 }
@@ -396,8 +412,8 @@ func (s *renderState) lookupLoose(p *pathExpr, ctx any) any {
 		parts = parts[1:]
 	case p.bp: // lookupBlockParam
 		v = nil
-		if i := len(s.bps) - 1 - p.bpDepth; i >= 0 && p.bpIdx < len(s.bps[i]) {
-			v = s.bps[i][p.bpIdx]
+		if i := len(s.bps) - 1 - p.bpDepth; i >= 0 && p.bpIdx < len(s.bps[i].vals) {
+			v = s.bps[i].vals[p.bpIdx]
 		}
 		parts = parts[1:]
 	case p.depth > 0:
@@ -446,8 +462,8 @@ func (s *renderState) lookupStrict(p *pathExpr, ctx any, terminal bool) (any, er
 		}
 	case p.bp:
 		v = nil
-		if j := len(s.bps) - 1 - p.bpDepth; j >= 0 && p.bpIdx < len(s.bps[j]) {
-			v = s.bps[j][p.bpIdx]
+		if j := len(s.bps) - 1 - p.bpDepth; j >= 0 && p.bpIdx < len(s.bps[j].vals) {
+			v = s.bps[j].vals[p.bpIdx]
 		}
 		i, terminal = 1, false
 	case p.depth > 0:
