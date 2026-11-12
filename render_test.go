@@ -362,3 +362,36 @@ func TestDataRootAndFrames(t *testing.T) {
 		}
 	}
 }
+
+func TestPartialsExtra(t *testing.T) {
+	type user struct{ Name string }
+	raw, _ := ParseWithOptions("{{h}}", Options{NoEscape: true}) // renders with its own options
+	cases := []struct {
+		src, want string
+		partials  map[string]string
+	}{
+		// JS indents the partial's whole result, newlines from data included.
+		{"x\n  {{> p}}\ny", "x\n  a\n  b|\n  a\n  by", map[string]string{"p": "{{v}}|\n{{v}}"}},
+		// A helper's Fn() buffer is indented once, when the helper's result is written.
+		{"  {{> p}}", "  1\n  2", map[string]string{"p": "{{#wrap}}1\n2{{/wrap}}"}},
+		{"{{h}}{{> raw}}", "&lt;b&gt;<b>", nil},
+		{"{{> p u greeting='hi'}}", "hi Ann", map[string]string{"p": "{{greeting}} {{Name}}"}},
+	}
+	for _, c := range cases {
+		tpl, err := Parse(c.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tpl.RegisterHelper("wrap", func(o *HelperOptions) (any, error) { return o.Fn() })
+		tpl.RegisterPartialTemplate("raw", raw)
+		for name, src := range c.partials {
+			if err := tpl.RegisterPartial(name, src); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := tpl.Render(map[string]any{"v": "a\nb", "h": "<b>", "u": user{"Ann"}})
+		if err != nil || got != c.want {
+			t.Errorf("%q = %q, %v; want %q", c.src, got, err, c.want)
+		}
+	}
+}

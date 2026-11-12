@@ -20,6 +20,14 @@ type outWriter struct {
 	buf     []byte
 	emitted *int // bytes produced by the whole render; shared with sub-writers
 	max     int
+
+	// indents are the standalone partials being rendered into this
+	// writer, outermost first; indents[bol:] are at a line start and owe
+	// their indent before the next byte (JS invokePartialWrapper indents
+	// every line of a partial's result but a trailing empty one).
+	indents []string
+	bol     int
+	tmp     []byte // writeValue scratch while indenting
 }
 
 // commit counts the bytes appended to buf since mark and flushes when due.
@@ -39,20 +47,56 @@ func (o *outWriter) commit(mark int) error {
 
 func (o *outWriter) writeString(s string) error {
 	mark := len(o.buf)
-	o.buf = append(o.buf, s...)
+	if len(o.indents) > 0 {
+		appendIndented(o, s)
+	} else {
+		o.buf = append(o.buf, s...)
+	}
 	return o.commit(mark)
 }
 
 // writeValue appends v like the JS `append` (escape=false) or
 // `appendEscaped` (escapeExpression) opcodes. SafeString is never escaped.
 func (o *outWriter) writeValue(v any, escape bool) error {
-	mark := len(o.buf)
 	if s, ok := v.(SafeString); ok {
-		o.buf = append(o.buf, s...)
+		return o.writeString(string(s))
+	}
+	mark := len(o.buf)
+	if len(o.indents) > 0 {
+		o.tmp = appendValue(o.tmp[:0], v, escape, o.max-*o.emitted)
+		appendIndented(o, o.tmp)
 	} else {
 		o.buf = appendValue(o.buf, v, escape, mark+o.max-*o.emitted)
 	}
 	return o.commit(mark)
+}
+
+// appendIndented appends s, writing the owed indents before the first
+// byte of each line.
+func appendIndented[S string | []byte](o *outWriter, s S) {
+	for len(s) > 0 {
+		for _, in := range o.indents[o.bol:] {
+			o.buf = append(o.buf, in...)
+		}
+		o.bol = len(o.indents)
+		i := 0
+		for i < len(s) && s[i] != '\n' {
+			i++
+		}
+		if i < len(s) {
+			i++
+			o.bol = 0
+		}
+		o.buf = append(o.buf, s[:i]...)
+		s = s[i:]
+	}
+}
+
+func (o *outWriter) pushIndent(indent string) { o.indents = append(o.indents, indent) }
+
+func (o *outWriter) popIndent() {
+	o.indents = o.indents[:len(o.indents)-1]
+	o.bol = min(o.bol, len(o.indents))
 }
 
 func (o *outWriter) flush() error {
@@ -66,11 +110,14 @@ func (o *outWriter) flush() error {
 
 // renderState is one render's mutable state.
 type renderState struct {
-	t      *Template
-	out    *outWriter // current sink; renderSub swaps in a sub-writer
-	spare  []byte     // a finished sub-writer's buffer, reused by the next one
-	depths []any      // JS depths, innermost last: JS depths[n] is depths[len-1-n]
-	depth  int        // nested block programs (partials will count too)
+	t     *Template
+	out   *outWriter // current sink; renderSub swaps in a sub-writer
+	spare []byte     // a finished sub-writer's buffer, reused by the next one
+	// depths are the JS depths, innermost last: JS depths[n] is
+	// depths[len-1-n]. A partial without compat starts a fresh stack: a
+	// view past the caller's entries, which appends never overwrite.
+	depths []any
+	depth  int // nested block programs and partial expansions
 	// bps is the runtime.js blockParams chain: one frame per program being
 	// rendered, innermost last (nil when the caller passed none). A path with
 	// pathExpr.bp set reads bps[len-1-bpDepth][bpIdx].
@@ -78,7 +125,10 @@ type renderState struct {
 	// data is the current @data frame (JS options.data); nil when
 	// Options.Data is false.
 	data *dataFrame
-	ops  int
+	// inlines are the {{#*inline}} partials in scope, innermost last.
+	inlines []inlinePartial
+	opts    *Options // of the template being run: the root's or a partial's
+	ops     int
 	// emitted is the output byte count every outWriter of this render shares.
 	emitted int
 	limits  Limits
@@ -101,7 +151,7 @@ func rootFrame(ctx any, dataVars map[string]any) *dataFrame {
 }
 
 func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVars map[string]any) error {
-	s := &renderState{t: t, out: out, limits: t.opts.Limits.withDefaults(), ctx: ctx, done: ctx.Done()}
+	s := &renderState{t: t, out: out, opts: &t.opts, limits: t.opts.Limits.withDefaults(), ctx: ctx, done: ctx.Done()}
 	out.emitted, out.max = &s.emitted, s.limits.MaxOutputSize
 	if err := ctx.Err(); err != nil {
 		return err
@@ -110,7 +160,7 @@ func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVar
 	if t.opts.Data == nil || *t.opts.Data {
 		s.data = rootFrame(data, dataVars)
 	}
-	if err := s.body(t.prog.body, data); err != nil {
+	if err := s.run(t.prog, data); err != nil {
 		return err
 	}
 	// Both counters stay over once exceeded, so a LimitError a helper
@@ -160,7 +210,7 @@ func (s *renderState) renderProgramBP(p *program, ctx any, blockParams []any) er
 	}
 	s.depth++
 	s.bps = append(s.bps, blockParams)
-	err := s.body(p.body, ctx)
+	err := s.run(p, ctx)
 	s.bps = s.bps[:len(s.bps)-1]
 	s.depth--
 	if push {
@@ -242,22 +292,22 @@ func (s *renderState) body(nodes []node, ctx any) error {
 		case *commentNode:
 		case *mustacheNode:
 			if n.decorator {
-				return errAt(n, "decorators are not supported yet")
+				continue // run on program entry
 			}
 			var v any
 			if v, err = s.expr(&n.call, ctx, false, nil, nil); err == nil {
-				err = s.out.writeValue(v, n.escaped && !s.t.opts.NoEscape)
+				err = s.out.writeValue(v, n.escaped && !s.opts.NoEscape)
 			}
 		case *blockNode:
 			if n.decorator {
-				return errAt(n, "decorators are not supported yet")
+				continue // run on program entry
 			}
 			var v any
 			if v, err = s.expr(&n.call, ctx, true, n.program, n.inverse); err == nil {
 				err = s.out.writeValue(v, false)
 			}
 		case *partialNode:
-			return errAt(n, "partials are not supported yet")
+			err = s.partial(n, ctx)
 		default:
 			return errAt(n, "unknown node")
 		}
@@ -318,7 +368,7 @@ func (s *renderState) lookup(p *pathExpr, ctx any) any {
 			return nil
 		}
 		v = s.depths[i]
-	case s.t.opts.Compat && !p.scoped && len(parts) > 0: // depthedLookup of the first part
+	case s.opts.Compat && !p.scoped && len(parts) > 0: // depthedLookup of the first part
 		v = s.depthedLookup(parts[0])
 		parts = parts[1:]
 	}

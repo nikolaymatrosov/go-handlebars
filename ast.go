@@ -25,6 +25,18 @@ type program struct {
 	body        []node
 	blockParams []string // `as |a b|` names (raw ID text); nil when absent
 	chained     bool     // inverse holding the single block of an `{{else foo}}` chain
+	decorators  []node   // the decorator blocks/mustaches in body, run on entry (JS fn.decorator)
+}
+
+// isDecorator reports whether n is {{* x}} or {{#* x}}...{{/x}}.
+func isDecorator(n node) bool {
+	switch n := n.(type) {
+	case *mustacheNode:
+		return n.decorator
+	case *blockNode:
+		return n.decorator
+	}
+	return false
 }
 
 // contentNode is literal text (JS ContentStatement). Empty values are kept,

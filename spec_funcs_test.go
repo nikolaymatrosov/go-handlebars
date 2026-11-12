@@ -59,7 +59,8 @@ var specFuncs = map[string]any{
 		}
 		return o.Inverse()
 	},
-	"be4daadd8d6d": func(o *HelperOptions) (any, error) { return o.Hash["length"], nil }, // function(options) { return options.hash.length; }
+	"be4daadd8d6d": func(o *HelperOptions) (any, error) { return o.Hash["length"], nil },                // function(options) { return options.hash.length; }
+	"ee7950d75856": func(o *HelperOptions) (any, error) { s, err := o.Fn(); return SafeString(s), err }, // function (options) { return new Handlebars.SafeString(options.fn()); }
 
 	// data.json
 	"4a8f31bb6da2": func(o *HelperOptions) (any, error) { // options.data.adjective + ' ' + this.noun
@@ -332,6 +333,15 @@ var specFuncs = map[string]any{
 		return SafeString(`<input aria-label="` + escapeString(jsStr(o.Hash["aria-label"])) + `" placeholder="` + escapeString(jsStr(o.Hash["placeholder"])) + `" />`), nil
 	},
 	"ecc60e33a563": func(o *HelperOptions) (any, error) { return SafeString(jsStr(arg(o, 0))), nil }, // function (defaultString) { return new SafeString(defaultString); }
+
+	// partials.json
+	"1ac3ed3f5a1a": func(o *HelperOptions) (any, error) { return "dude", nil },    // function () { return 'dude'; }
+	"f1251b711da7": func(o *HelperOptions) (any, error) { return "missing", nil }, // function () { return 'missing'; }
+	"5f4a5c794424": func(o *HelperOptions) (any, error) { // function partial(context) { return context.name + ' (' + context.url + ') '; }
+		name, _ := lookupProperty(o.Ctx(), "name")
+		url, _ := lookupProperty(o.Ctx(), "url")
+		return jsStr(name) + " (" + jsStr(url) + ") ", nil
+	},
 }
 
 // jsGlobalValue is the JS global `value` one helper keeps (undefined: nil).

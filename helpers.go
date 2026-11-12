@@ -223,10 +223,10 @@ var ErrHelperPanic = errors.New("handlebars: helper panicked")
 // ErrHelperPanic error and the render state is restored, so the render
 // fails cleanly even if the panic hit mid-block. Builtins must not use it.
 func (s *renderState) call(name string, h Helper, o *HelperOptions) (v any, err error) {
-	out, nd, nb, depth, data := s.out, len(s.depths), len(s.bps), s.depth, s.data
+	out, depths, bps, depth, data, inlines, opts := s.out, s.depths, s.bps, s.depth, s.data, s.inlines, s.opts
 	defer func() {
 		if r := recover(); r != nil {
-			s.out, s.depths, s.bps, s.depth, s.data = out, s.depths[:nd], s.bps[:nb], depth, data
+			s.out, s.depths, s.bps, s.depth, s.data, s.inlines, s.opts = out, depths, bps, depth, data, inlines, opts
 			v, err = nil, fmt.Errorf("%w (%s): %v\n%s", ErrHelperPanic, name, r, debug.Stack())
 		}
 	}()

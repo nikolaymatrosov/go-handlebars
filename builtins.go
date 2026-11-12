@@ -203,7 +203,7 @@ func eachHelper(o *HelperOptions) (any, error) {
 		r.bp = make([]any, 2)
 	}
 	if !isNull(ctx) {
-		err = r.over(ctx)
+		err = forOwn(ctx, r.iter)
 	}
 	if err == nil && r.n == 0 {
 		err = o.s.renderProgram(o.inverse, o.this)
@@ -211,19 +211,22 @@ func eachHelper(o *HelperOptions) (any, error) {
 	return nil, err
 }
 
-func (r *eachRun) over(ctx any) error {
+// forOwn visits the own enumerable properties of ctx in JS order, as
+// {{#each}} and Utils.extend see them: array items (key "", arr true),
+// object keys (KeyedCollection order, maps sorted, struct fields).
+func forOwn(ctx any, visit func(v any, key string, arr, last bool) error) error {
 	switch x := ctx.(type) {
 	case []any:
 		for i, v := range x {
-			if err := r.iter(v, "", true, i == len(x)-1); err != nil {
+			if err := visit(v, "", true, i == len(x)-1); err != nil {
 				return err
 			}
 		}
 		return nil
 	case map[string]any:
-		return r.keys(sortedKeys(x), func(k string) any { return x[k] })
+		return visitKeys(sortedKeys(x), func(k string) any { return x[k] }, visit)
 	case KeyedCollection:
-		return r.keys(x.Keys(), func(k string) any { v, _ := x.Get(k); return v })
+		return visitKeys(x.Keys(), func(k string) any { v, _ := x.Get(k); return v }, visit)
 	}
 	rv := reflect.ValueOf(ctx)
 	for i := 0; i < 8 && (rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface); i++ {
@@ -235,7 +238,7 @@ func (r *eachRun) over(ctx any) error {
 	switch rv.Kind() {
 	case reflect.Slice, reflect.Array:
 		for i, n := 0, rv.Len(); i < n; i++ {
-			if err := r.iter(rv.Index(i).Interface(), "", true, i == n-1); err != nil {
+			if err := visit(rv.Index(i).Interface(), "", true, i == n-1); err != nil {
 				return err
 			}
 		}
@@ -249,7 +252,7 @@ func (r *eachRun) over(ctx any) error {
 		}
 		slices.Sort(keys)
 		kt := rv.Type().Key()
-		return r.keys(keys, func(k string) any { return rv.MapIndex(reflect.ValueOf(k).Convert(kt)).Interface() })
+		return visitKeys(keys, func(k string) any { return rv.MapIndex(reflect.ValueOf(k).Convert(kt)).Interface() }, visit)
 	case reflect.Struct:
 		t := rv.Type()
 		var names []string
@@ -258,14 +261,14 @@ func (r *eachRun) over(ctx any) error {
 				names = append(names, t.Field(i).Name)
 			}
 		}
-		return r.keys(names, func(k string) any { return rv.FieldByName(k).Interface() })
+		return visitKeys(names, func(k string) any { return rv.FieldByName(k).Interface() }, visit)
 	}
 	return nil
 }
 
-func (r *eachRun) keys(keys []string, get func(string) any) error {
+func visitKeys(keys []string, get func(string) any, visit func(v any, key string, arr, last bool) error) error {
 	for i, k := range keys {
-		if err := r.iter(get(k), k, false, i == len(keys)-1); err != nil {
+		if err := visit(get(k), k, false, i == len(keys)-1); err != nil {
 			return err
 		}
 	}

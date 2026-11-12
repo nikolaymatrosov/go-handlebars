@@ -40,15 +40,15 @@ var specGate = map[string]int{
 	"basic.json":              90,
 	"blocks.json":             31,
 	"builtins.json":           42,
-	"data.json":               21,
+	"data.json":               22,
 	"helpers.json":            87,
-	"partials.json":           0,
-	"regressions.json":        26,
+	"partials.json":           61,
+	"regressions.json":        32,
 	"strict.json":             7,
 	"string-params.json":      0,
 	"subexpressions.json":     16,
 	"track-ids.json":          0,
-	"whitespace-control.json": 31,
+	"whitespace-control.json": 36,
 }
 
 // Task 1 hooks: tokenizer.json runner. Nil means not implemented (tests FAIL).
@@ -324,18 +324,24 @@ func runRender(tc specTest) (specStatus, string) {
 		return failOrSkip(err)
 	}
 	_ = decorators
+	// JS registers some partials globally (Handlebars.registerPartial) and
+	// passes others per render (options.partials); a Template has one
+	// registry, so both go there.
 	partials := map[string]string{}
+	partialFns := map[string]Helper{}
 	for name, raw := range tc.Partials {
 		p, err := decodeResolved(raw)
 		if err != nil {
 			return failOrSkip(err)
 		}
-		s, ok := p.(string)
-		if !ok {
-			// Task 9: register function partials here once the API exists.
-			return specFail, fmt.Sprintf("function partial %q not supported yet", name)
+		switch p := p.(type) {
+		case string:
+			partials[name] = p
+		case func(*HelperOptions) (any, error):
+			partialFns[name] = p
+		default:
+			return specFail, fmt.Sprintf("partial %q: unsupported %T", name, p)
 		}
-		partials[name] = s
 	}
 
 	opts, err := buildOptions(tc.CompileOptions)
@@ -360,6 +366,12 @@ func runRender(tc specTest) (specStatus, string) {
 		if err := tpl.RegisterPartial(name, src); err != nil {
 			return expectErr(tc, err)
 		}
+	}
+	for name, h := range partialFns { // JS partial(context, options), ported as a Helper with this = context
+		tpl.RegisterPartialFunc(name, func(ctx any) (string, error) {
+			v, err := h(&HelperOptions{this: ctx})
+			return jsStr(v), err
+		})
 	}
 
 	var dataVars map[string]any

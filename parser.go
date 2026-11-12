@@ -180,6 +180,9 @@ func (p *parser) program(end tokSet, blockParams []string) (*program, error) {
 			return nil, err
 		}
 		prog.body = append(prog.body, n)
+		if isDecorator(n) {
+			prog.decorators = append(prog.decorators, n)
+		}
 	}
 	if !end.has(p.peek().kind) {
 		if len(prog.body) == 0 {
@@ -681,6 +684,9 @@ func (p *parser) partial() (node, error) {
 	}
 	close := p.next()
 	n := &partialNode{loc: at(open), name: c.path, params: c.params, hash: c.hash, strip: strip(open.text, close.text)}
+	if len(n.params) > 1 && p.compileErr == nil { // compiler.js PartialStatement
+		p.compileErr = errAt(n, "Unsupported number of partial arguments: "+itoa(len(n.params)))
+	}
 	if !isBlock {
 		return n, nil
 	}

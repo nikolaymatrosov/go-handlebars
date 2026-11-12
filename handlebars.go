@@ -3,12 +3,9 @@ package handlebars
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 )
-
-var errNotImplemented = errors.New("not implemented")
 
 // Limits bounds resource usage for untrusted templates. Zero value fields
 // fall back to the corresponding DefaultLimits field.
@@ -104,10 +101,11 @@ func ParseWithOptions(src string, opts Options) (*Template, error) {
 
 // Template is a parsed template.
 type Template struct {
-	prog    *program
-	opts    Options
-	helpers map[string]Helper
-	bufHint int // Render's initial buffer size
+	prog     *program
+	opts     Options
+	helpers  map[string]Helper
+	partials map[string]partialDef
+	bufHint  int // Render's initial buffer size
 
 	// Logger receives {{log}} output: level is "debug", "info", "warn",
 	// "error" or "log" (an out-of-range numeric level). Nil discards it.
@@ -122,10 +120,6 @@ func (t *Template) RegisterHelper(name string, h Helper) {
 	}
 	t.helpers[name] = h
 }
-
-func (t *Template) RegisterPartial(name, src string) error { return errNotImplemented }
-
-func (t *Template) RegisterPartialTemplate(name string, p *Template) {}
 
 func (t *Template) Render(data any) (string, error) {
 	out := outWriter{buf: make([]byte, 0, t.bufHint)}

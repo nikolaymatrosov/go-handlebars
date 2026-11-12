@@ -13,6 +13,11 @@ type dataFrame struct {
 	arr         bool // iterating an array: @key is the index
 	index       int
 	first, last bool
+
+	// @partial-block, set by partial calls (runtime.js invokePartial). A
+	// set nil block hides the enclosing one.
+	blockSet bool
+	block    *partialBlock
 }
 
 // newFrame is createFrame(options.data) extended with vars, so an empty
@@ -42,6 +47,12 @@ func (f *dataFrame) get(name string) (any, bool) {
 			case "last":
 				return f.last, true
 			}
+		}
+		if f.blockSet && name == "partial-block" {
+			if f.block == nil {
+				return nil, true // not a typed nil in the interface
+			}
+			return f.block, true
 		}
 		if v, ok := f.vars[name]; ok {
 			return v, true
