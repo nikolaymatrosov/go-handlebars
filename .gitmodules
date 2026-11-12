@@ -1,0 +1,3 @@
+[submodule "handlebars-spec"]
+	path = handlebars-spec
+	url = git@github.com:jbboehr/handlebars-spec.git
