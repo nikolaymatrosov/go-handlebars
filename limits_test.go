@@ -73,3 +73,14 @@ func TestInlinePartialOps(t *testing.T) {
 		}
 	}
 }
+
+// A helper deleting a typed map's key while {{#each}} walks it: the
+// iteration sees undefined, as JS context[field] does, instead of panicking.
+func TestEachMapMutation(t *testing.T) {
+	m := map[string]int{"a": 1, "b": 2}
+	tpl, _ := Parse("{{#each m}}{{del}}{{@key}}={{this}};{{/each}}")
+	tpl.RegisterHelper("del", func(*HelperOptions) (any, error) { delete(m, "b"); return nil, nil })
+	if got, err := tpl.Render(map[string]any{"m": m}); got != "a=1;b=;" || err != nil {
+		t.Errorf("got %q, %v; want %q", got, err, "a=1;b=;")
+	}
+}

@@ -298,7 +298,12 @@ func forOwn(ctx any, visit func(v any, key string, idx int, arr, last bool) erro
 		}
 		slices.Sort(keys)
 		kt := rv.Type().Key()
-		return visitKeys(keys, func(k string) any { return rv.MapIndex(reflect.ValueOf(k).Convert(kt)).Interface() }, visit)
+		return visitKeys(keys, func(k string) any {
+			if v := rv.MapIndex(reflect.ValueOf(k).Convert(kt)); v.IsValid() {
+				return v.Interface()
+			}
+			return nil // deleted mid-loop by a helper: JS context[field] is undefined
+		}, visit)
 	case reflect.Struct:
 		t := rv.Type()
 		var names []string
