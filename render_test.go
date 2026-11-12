@@ -351,17 +351,50 @@ func TestDataRootAndFrames(t *testing.T) {
 		{"{{@root.a}}", map[string]any{"a": "x"}, map[string]any{"root": map[string]any{"a": "y"}}, "y"},
 		{"{{@../v}}", nil, map[string]any{"v": 1}, "1"},                               // root frame is a child of the seeded vars
 		{"{{#as_ x as |foo|}}{{@foo}}{{/as_}}", nil, map[string]any{"foo": "d"}, "d"}, // block params never shadow @foo
+		// a non-object root
+		{rootSrc, "abc", nil, "abc|3||w|abc"},
+		{rootSrc, []any{"x", "y"}, nil, "x,y|2|22|w|x,y"},
+		{rootSrc, 42.0, nil, "42|||w|42"},
+		{rootSrc, false, nil, "false||||false"},
+		{rootSrc, nil, nil, "||||"},
+		// each -> FnTo(dataVars) -> each: the helper's frame sits between the
+		// two loop frames and inherits the outer one's variables (createFrame)
+		{"{{#each outer}}{{#fr}}{{#each @root.inner}}{{@index}}{{@../x}}{{@../index}}{{@../../index}}[{{@../../../index}}],{{/each}}{{/fr}}{{/each}}",
+			map[string]any{"outer": []any{"a", "b"}, "inner": []any{1, 2}}, nil, "0F00[],1F00[],0F11[],1F11[],"},
 	} {
 		tpl, err := Parse(c.src)
 		if err != nil {
 			t.Fatal(err)
 		}
-		tpl.RegisterHelper("as_", func(o *HelperOptions) (any, error) { return o.Fn() })
+		registerDataHelpers(tpl)
 		var sb strings.Builder
 		if err := tpl.RenderWithData(&sb, c.data, c.vars); err != nil || sb.String() != c.want {
 			t.Errorf("%s = %q, %v; want %q", c.src, sb.String(), err, c.want)
 		}
 	}
+
+	// Data off: no frames at all, so FnTo's dataVars, DataVar, seeded vars
+	// and loop variables are all undefined.
+	off := false
+	tpl, _ := ParseWithOptions("{{#fr}}[{{@x}}|{{peek}}|{{#each a}}{{@index}}{{@../x}}{{/each}}|{{@root}}{{@v}}]{{/fr}}", Options{Data: &off})
+	registerDataHelpers(tpl)
+	var sb strings.Builder
+	if err := tpl.RenderWithData(&sb, map[string]any{"a": []any{1, 2}}, map[string]any{"v": 1}); err != nil || sb.String() != "[|||]" {
+		t.Errorf("data off = %q, %v; want %q", sb.String(), err, "[|||]")
+	}
+}
+
+const rootSrc = "{{@root}}|{{@root.length}}|{{#each @root}}{{@root.length}}{{/each}}|{{#with @root}}w{{/with}}|{{> p}}"
+
+func registerDataHelpers(tpl *Template) {
+	tpl.RegisterHelper("as_", func(o *HelperOptions) (any, error) { return o.Fn() })
+	tpl.RegisterHelper("fr", func(o *HelperOptions) (any, error) {
+		var sb strings.Builder
+		err := o.FnTo(&sb, o.Ctx(), nil, map[string]any{"x": "F"})
+		return SafeString(sb.String()), err
+	})
+	tpl.RegisterHelper("peek", func(o *HelperOptions) (any, error) { return o.DataVar("x"), nil })
+	tpl.RegisterPartial("p", "{{@root}}")
 }
 
 func TestPartialsExtra(t *testing.T) {
