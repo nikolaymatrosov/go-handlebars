@@ -1,7 +1,6 @@
 package handlebars
 
 import (
-	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -43,9 +42,13 @@ type parser struct {
 	toks            []token // always ends with tEOF
 	i               int
 	depth, maxDepth int
-	bps             [][]string // blockParams of the enclosing programs, innermost last
-	opts            *Options
-	compileErr      error // first compile-time (compiler.js) error, reported after a clean parse
+	// level is the nesting of programs (JS compiler options.blockParams);
+	// bpDecls maps each block param name in scope to where the enclosing
+	// programs declare it, innermost last, so resolving a path is O(1).
+	level      int
+	bpDecls    map[string][]bpDecl
+	opts       *Options
+	compileErr error // first compile-time (compiler.js) error, reported after a clean parse
 }
 
 // tokSet is a bitset of token kinds.
@@ -171,8 +174,9 @@ func showPosition(src string, la token) string {
 
 // program parses statement* and requires the next token to be in end.
 func (p *parser) program(end tokSet, blockParams []string) (*program, error) {
-	p.bps = append(p.bps, blockParams) // JS compiler options.blockParams.unshift
-	defer func() { p.bps = p.bps[:len(p.bps)-1] }()
+	p.level++ // JS compiler options.blockParams.unshift
+	p.declare(blockParams)
+	defer func() { p.undeclare(blockParams); p.level-- }()
 	prog := &program{}
 	for stmtStart.has(p.peek().kind) {
 		n, err := p.statement()
@@ -446,15 +450,42 @@ func stringParam(s string) string {
 	return strings.ReplaceAll(s, "/", ".")
 }
 
+// bpDecl is a block param declaration: its program's level and the name's
+// first index in the `as |...|` list (JS indexOf).
+type bpDecl struct{ level, idx int }
+
+// declare brings the block params of the program at p.level into scope.
+func (p *parser) declare(names []string) {
+	for i, name := range names {
+		ds := p.bpDecls[name]
+		if len(ds) > 0 && ds[len(ds)-1].level == p.level {
+			continue // repeated in the list: the first index wins
+		}
+		if p.bpDecls == nil {
+			p.bpDecls = map[string][]bpDecl{}
+		}
+		p.bpDecls[name] = append(ds, bpDecl{p.level, i})
+	}
+}
+
+// undeclare drops what declare(names) added at p.level.
+func (p *parser) undeclare(names []string) {
+	for _, name := range names {
+		if ds := p.bpDecls[name]; len(ds) > 0 && ds[len(ds)-1].level == p.level {
+			p.bpDecls[name] = ds[:len(ds)-1]
+		}
+	}
+}
+
 // blockParamIndex is compiler.js blockParamIndex: the (program depth, index)
 // of the nearest enclosing `as |name|`, depth 0 being the innermost program.
 func (p *parser) blockParamIndex(name string) (depth, idx int, ok bool) {
-	for d := 0; d < len(p.bps); d++ {
-		if i := slices.Index(p.bps[len(p.bps)-1-d], name); i >= 0 {
-			return d, i, true
-		}
+	ds := p.bpDecls[name]
+	if len(ds) == 0 {
+		return 0, 0, false
 	}
-	return 0, 0, false
+	d := ds[len(ds)-1]
+	return p.level - d.level, d.idx, true
 }
 
 // isScoped is JS AST.helpers.scopedId: /^\.|this\b/ on a path's original.
@@ -595,8 +626,8 @@ func (p *parser) inverseChain() (*inverseInfo, error) {
 		return nil, err
 	}
 	// The chained block lives in a wrapper inverse program: one more level.
-	p.bps = append(p.bps, nil)
-	defer func() { p.bps = p.bps[:len(p.bps)-1] }()
+	p.level++
+	defer func() { p.level-- }()
 	open, err := p.openTag()
 	if err != nil {
 		return nil, err

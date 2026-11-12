@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func init() {
@@ -106,5 +107,27 @@ func TestWhitespaceControl(t *testing.T) {
 	prog, _ := parse("  {{> foo}}\n", Options{})
 	if pn := prog.body[1].(*partialNode); pn.indent != "  " {
 		t.Errorf("partial indent = %q, want %q", pn.indent, "  ")
+	}
+}
+
+// Parsing must stay linear in the source: each case sits near
+// MaxTemplateSize and took seconds to minutes when every path scanned the
+// enclosing block params (a long `as |...|` list, or many nested programs
+// under a raised MaxParseDepth).
+func TestParseLinear(t *testing.T) {
+	n := DefaultLimits.MaxTemplateSize
+	deep := strings.Repeat("{{#each a as |x|}}", n/80) + strings.Repeat("{{y}}", n/10) + strings.Repeat("{{/each}}", n/80)
+	cases := map[string]string{
+		"long list": "{{#each a as |" + strings.Repeat("a ", n/5) + "|}}" + strings.Repeat("{{b}}", n/10) + "{{/each}}",
+		"deep":      deep,
+	}
+	for name, src := range cases {
+		start := time.Now()
+		_, err := ParseWithOptions(src, Options{Limits: Limits{MaxParseDepth: n}})
+		d := time.Since(start)
+		t.Logf("%s (%d KiB): %v", name, len(src)>>10, d)
+		if err != nil || d > time.Second {
+			t.Errorf("%s: %v, %v; want a linear parse", name, d, err)
+		}
 	}
 }

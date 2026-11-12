@@ -145,6 +145,8 @@ func TestRenderBlockParams(t *testing.T) {
 		{"{{#bp as |a|}}{{this.a}}{{/bp}}", "ctx"},
 		{`{{#bp as |a|}}{{"a"}}{{/bp}}`, "A"}, // transformLiteralToPath, then a block param
 		{"{{#bp as |a b c|}}[{{c}}]{{/bp}}", "[]"},
+		{"{{#bp as |x a a|}}{{a.c}}{{/bp}}", "C"},                    // JS indexOf: the first a
+		{"{{#bp as |b|}}{{#bp as |x a|}}{{/bp}}{{a}}{{/bp}}", "ctx"}, // out of scope once its block closes
 		// chained else: the wrapper inverse program is a frame; o is 2 levels out
 		// ('a' is declared on the sibling program, so it is a context lookup).
 		{"{{#bp as |o|}}{{#bpi as |a|}}x{{else bp as |b|}}{{o}}{{b}}{{a}}{{/bpi}}{{/bp}}", "AActx"},
