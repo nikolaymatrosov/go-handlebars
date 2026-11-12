@@ -435,3 +435,14 @@ func TestPartialScopes(t *testing.T) {
 		}
 	}
 }
+
+func TestStrictErrorLocation(t *testing.T) {
+	tpl, err := ParseWithOptions("\n\n\n   {{hello}}", Options{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = tpl.Render(map[string]any{})
+	if want := `"hello" not defined in [object Object] - 4:5`; err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %s", err, want)
+	}
+}

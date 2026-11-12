@@ -62,6 +62,14 @@ var specFuncs = map[string]any{
 	"be4daadd8d6d": func(o *HelperOptions) (any, error) { return o.Hash["length"], nil },                // function(options) { return options.hash.length; }
 	"ee7950d75856": func(o *HelperOptions) (any, error) { s, err := o.Fn(); return SafeString(s), err }, // function (options) { return new Handlebars.SafeString(options.fn()); }
 
+	// strict.json
+	"cdf6591d4600": func(o *HelperOptions) (any, error) { // equals('value' in options.hash, true); equals(options.hash.value, undefined); return 'success'
+		if v, ok := o.Hash["value"]; !ok || v != nil {
+			return nil, errors.New("expected hash.value present and undefined")
+		}
+		return "success", nil
+	},
+
 	// data.json
 	"4a8f31bb6da2": func(o *HelperOptions) (any, error) { // options.data.adjective + ' ' + this.noun
 		n, _ := lookupProperty(o.Ctx(), "noun")

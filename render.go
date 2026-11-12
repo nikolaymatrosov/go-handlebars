@@ -332,7 +332,7 @@ func errAt(n node, msg string) error {
 func (s *renderState) param(n node, ctx any) (any, error) {
 	switch n := n.(type) {
 	case *pathExpr:
-		return s.lookup(n, ctx), nil
+		return s.lookup(n, ctx, false)
 	case *subExpr:
 		return s.expr(&n.call, ctx, false, nil, nil)
 	case *strLit:
@@ -347,7 +347,16 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 
 // lookup resolves a path like lookupOnContext: depth picks the context,
 // then each part is a lookupProperty, stopping at null/undefined.
-func (s *renderState) lookup(p *pathExpr, ctx any) any {
+// site reports a strict use site (JS path.strict): the callee of a mustache,
+// block or helper call, whose last part must exist in strict mode.
+func (s *renderState) lookup(p *pathExpr, ctx any, site bool) (any, error) {
+	if s.opts.Strict || s.opts.AssumeObjects {
+		return s.lookupStrict(p, ctx, s.opts.Strict && site)
+	}
+	return s.lookupLoose(p, ctx), nil
+}
+
+func (s *renderState) lookupLoose(p *pathExpr, ctx any) any {
 	v, parts := ctx, p.parts
 	switch {
 	case p.data: // lookupData: depth walks _parent, then the first part is a frame var
@@ -396,4 +405,83 @@ func (s *renderState) depthedLookup(name string) any {
 		}
 	}
 	return nil
+}
+
+// lookupStrict is javascript-compiler.js strictLookup. Intermediate parts
+// are dereferenced unchecked (a null one is a TypeError); with terminal the
+// last part must exist (runtime.js container.strict).
+func (s *renderState) lookupStrict(p *pathExpr, ctx any, terminal bool) (any, error) {
+	v, parts, i := ctx, p.parts, 0
+	var f *dataFrame
+	switch {
+	case p.data:
+		f = s.data
+		for d := p.depth; d > 0 && f != nil; d-- {
+			f = f.parent
+		}
+	case p.bp:
+		v = nil
+		if j := len(s.bps) - 1 - p.bpDepth; j >= 0 && p.bpIdx < len(s.bps[j]) {
+			v = s.bps[j][p.bpIdx]
+		}
+		i, terminal = 1, false
+	case p.depth > 0:
+		j := len(s.depths) - 1 - p.depth
+		if j < 0 {
+			return nil, nil
+		}
+		v = s.depths[j]
+	case s.opts.Compat && !p.scoped && len(parts) > 0:
+		v, i = s.depthedLookup(parts[0]), 1
+	}
+	if len(parts) == 0 {
+		return v, nil
+	}
+	n := len(parts)
+	if terminal {
+		n--
+	}
+	if p.data && i == 0 {
+		switch {
+		case terminal && n == 0:
+			if f != nil {
+				if w, ok := f.get(parts[0]); ok {
+					return w, nil
+				}
+			}
+			return nil, strictErr(p, nil, parts[0])
+		case f == nil:
+			return nil, typeErr(parts[0])
+		}
+		v, _ = f.get(parts[0])
+		i = 1
+	}
+	for ; i < n; i++ {
+		if isNull(v) {
+			return nil, typeErr(parts[i])
+		}
+		v, _ = lookupProperty(v, parts[i])
+	}
+	if terminal {
+		w, ok := lookupProperty(v, parts[n])
+		if !jsTruthy(v) || !ok {
+			return nil, strictErr(p, v, parts[n])
+		}
+		v = w
+	}
+	return v, nil
+}
+
+// strictErr is the container.strict Exception, located at the path.
+func strictErr(p *pathExpr, obj any, name string) error {
+	str := "undefined"
+	if obj != nil {
+		str = string(appendValue(nil, obj, false, 1<<10))
+	}
+	return errAt(p, "\""+name+"\" not defined in "+str)
+}
+
+// typeErr stands for the JS TypeError of reading a property of null.
+func typeErr(name string) error {
+	return &Error{Message: "Cannot read properties of undefined (reading '" + name + "')"}
 }

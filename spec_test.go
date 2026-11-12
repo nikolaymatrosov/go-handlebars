@@ -44,7 +44,7 @@ var specGate = map[string]int{
 	"helpers.json":            87,
 	"partials.json":           61,
 	"regressions.json":        32,
-	"strict.json":             7,
+	"strict.json":             22,
 	"string-params.json":      0,
 	"subexpressions.json":     16,
 	"track-ids.json":          0,

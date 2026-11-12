@@ -247,8 +247,10 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 	case c.kind == kindHelper || c.kind == kindKnown:
 		return s.invokeHelper(c, ctx, fn, inverse)
 	case c.kind == kindSimple: // a function value is called with `this` = ctx and no options
-		v := s.lookup(p, ctx)
-		var err error
+		v, err := s.lookup(p, ctx, true)
+		if err != nil {
+			return nil, err
+		}
 		if f, ok := asHelper(v); ok {
 			v, err = s.call(p.original, f, &HelperOptions{s: s, this: ctx})
 		}
@@ -265,9 +267,12 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 	registered, missing := h != nil, false
 	var v any
 	if !registered {
-		v = s.lookup(p, ctx)
+		var err error
+		if v, err = s.lookup(p, ctx, true); err != nil {
+			return nil, err
+		}
 		h, _ = asHelper(v)
-		missing = h == nil && isNull(v)
+		missing = h == nil && isNull(v) && !s.opts.Strict // strict drops helperMissing
 	}
 	var o *HelperOptions
 	if h != nil || missing {
@@ -329,10 +334,13 @@ func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any,
 		h, builtin = s.helper(p.parts[0])
 	}
 	if h == nil {
-		nonHelper := s.lookup(p, ctx)
+		nonHelper, err := s.lookup(p, ctx, true)
+		if err != nil {
+			return nil, err
+		}
 		var ok bool
 		if h, ok = asHelper(nonHelper); !ok {
-			if jsTruthy(nonHelper) { // JS: TypeError, calling a non-function
+			if s.opts.Strict || jsTruthy(nonHelper) { // JS: TypeError, calling a non-function
 				return nil, errAt(c.path, p.original+" is not a function")
 			}
 			return s.callHook("helperMissing", helperMissing, o)
