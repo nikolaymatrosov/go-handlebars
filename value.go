@@ -311,68 +311,25 @@ func appendReflect(dst []byte, rv reflect.Value, escape bool, limit, depth int) 
 }
 
 // appendJSNumber appends f formatted like JS Number.prototype.toString:
-// shortest round-trip digits, plain notation for 1e-7 < |f| < 1e21,
+// shortest round-trip digits, plain notation for 1e-6 <= |f| < 1e21,
 // exponent notation ("1e+21", "1e-7") otherwise.
 func appendJSNumber(dst []byte, f float64) []byte {
-	switch {
+	switch abs := math.Abs(f); {
 	case f != f:
 		return append(dst, "NaN"...)
-	case math.IsInf(f, 1):
+	case math.IsInf(f, 0):
+		if f < 0 {
+			dst = append(dst, '-')
+		}
 		return append(dst, "Infinity"...)
-	case math.IsInf(f, -1):
-		return append(dst, "-Infinity"...)
 	case f == 0: // also -0
 		return append(dst, '0')
+	case 1e-6 <= abs && abs < 1e21: // the range JS prints plainly
+		return strconv.AppendFloat(dst, f, 'f', -1, 64)
 	}
-	if f < 0 {
-		dst = append(dst, '-')
-		f = -f
-	}
-	var scratch [32]byte
-	e := strconv.AppendFloat(scratch[:0], f, 'e', -1, 64) // d[.ddd]e±XX
-	m := 1
-	for e[m] != 'e' {
-		m++
-	}
-	exp := 0
-	for _, c := range e[m+2:] {
-		exp = exp*10 + int(c-'0')
-	}
-	if e[m+1] == '-' {
-		exp = -exp
-	}
-	digits := e[:1]
-	if m > 1 {
-		digits = append(digits, e[2:m]...) // drop the '.' in place
-	}
-	k, n := len(digits), exp+1 // f = 0.digits × 10^n
-	switch {
-	case k <= n && n <= 21:
-		dst = append(dst, digits...)
-		for ; k < n; k++ {
-			dst = append(dst, '0')
-		}
-	case 0 < n && n <= 21:
-		dst = append(dst, digits[:n]...)
-		dst = append(dst, '.')
-		dst = append(dst, digits[n:]...)
-	case -6 < n && n <= 0:
-		dst = append(dst, '0', '.')
-		for ; n < 0; n++ {
-			dst = append(dst, '0')
-		}
-		dst = append(dst, digits...)
-	default:
-		dst = append(dst, digits[0])
-		if k > 1 {
-			dst = append(dst, '.')
-			dst = append(dst, digits[1:]...)
-		}
-		dst = append(dst, 'e')
-		if exp >= 0 {
-			dst = append(dst, '+')
-		}
-		dst = strconv.AppendInt(dst, int64(exp), 10)
+	dst = strconv.AppendFloat(dst, f, 'e', -1, 64) // d[.ddd]e±dd[d]
+	if n := len(dst); dst[n-2] == '0' && (dst[n-3] == '+' || dst[n-3] == '-') {
+		dst[n-2], dst = dst[n-1], dst[:n-1] // JS has no exponent padding: e-7, not e-07
 	}
 	return dst
 }

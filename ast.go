@@ -139,11 +139,13 @@ type (
 	strLit struct {
 		loc
 		value  string
+		boxed  any    // value, boxed once at parse time: as an argument it costs no allocation
 		legacy string // StringParams: the string pushParam passes for it as a param
 	}
 	numLit struct {
 		loc
 		value float64
+		boxed any // value, boxed once at parse time
 	}
 	boolLit struct {
 		loc

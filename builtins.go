@@ -52,7 +52,8 @@ func unlessHelper(o *HelperOptions) (any, error) {
 	// JS calls instance.helpers['if'] with fn and inverse swapped, so a
 	// user-registered `if` sees (and may override) unless.
 	if h, builtin := o.s.helper("if"); !builtin {
-		return o.s.call("if", h, &HelperOptions{Name: o.Name, Args: o.Args, Hash: o.Hash, s: o.s, this: o.this, fn: o.inverse, inverse: o.fn})
+		// Args is cloned: o, which backs it, is recycled after the call.
+		return o.s.call("if", h, &HelperOptions{Name: o.Name, Args: slices.Clone(o.Args), Hash: o.Hash, s: o.s, this: o.this, fn: o.inverse, inverse: o.fn})
 	}
 	return nil, o.cond(o.Args[0], o.inverse, o.fn)
 }
@@ -113,9 +114,13 @@ func lookupHelper(o *HelperOptions) (any, error) {
 	}
 	field := "undefined"
 	if len(o.Args) > 1 {
-		var ok bool
-		if field, ok = o.Args[1].(string); !ok { // a string is used as is, not copied
-			field = string(appendValue(nil, o.Args[1], false, 1<<10))
+		switch k := o.Args[1].(type) {
+		case string: // used as is, not copied
+			field = k
+		case int: // @index: Itoa allocates nothing below 100, one string above
+			field = strconv.Itoa(k)
+		default:
+			field = string(appendValue(nil, k, false, 1<<10))
 		}
 	}
 	v, _ := lookupProperty(o.Args[0], field)
@@ -177,7 +182,8 @@ func logLevel(v any) (float64, bool) {
 // eachRun is the state of one {{#each}}: a single data frame and block
 // param slice are overwritten by every iteration, so nothing is allocated
 // per item (but trackIds' item path). Nothing may retain them past the
-// iteration.
+// iteration; runs are recycled (renderState.freeRuns), and hold the frame
+// and block params themselves, so a loop allocates nothing at all.
 type eachRun struct {
 	o     *HelperOptions
 	frame *dataFrame
@@ -189,6 +195,9 @@ type eachRun struct {
 	path    []byte // nil: not tracking
 	pathLen int
 	ids     []string
+
+	frameBuf dataFrame // frame, when data is on
+	bpBuf    [2]any    // bp: the item and its key or index
 }
 
 func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
@@ -201,9 +210,11 @@ func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
 	}
 	if r.bp != nil {
 		r.bp[0] = v
-		if arr {
+		switch {
+		case len(r.bp) == 1: // `as |item|`: no key or index to box
+		case arr:
 			r.bp[1] = idx
-		} else {
+		default:
 			r.bp[1] = key
 		}
 	}
@@ -238,12 +249,16 @@ func eachHelper(o *HelperOptions) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := eachRun{o: o}
+	r := o.s.freeRuns.get()
+	defer o.s.freeRuns.put(r)
+	r.o = o
 	if o.s.data != nil {
-		r.frame = &dataFrame{parent: o.s.data, loop: true}
+		r.frameBuf = dataFrame{parent: o.s.data, loop: true}
+		r.frame = &r.frameBuf
 	}
 	if o.fn != nil && len(o.fn.blockParams) > 0 {
-		r.bp = make([]any, 2)
+		n := min(len(o.fn.blockParams), 2)
+		r.bp = r.bpBuf[:n:n]
 	}
 	if id, ok := o.id0(); ok { // trackIds
 		r.path = []byte("undefined") // without data JS leaves contextPath undefined: undefined + field

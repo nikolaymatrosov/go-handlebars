@@ -19,7 +19,8 @@ import (
 type Helper func(opts *HelperOptions) (any, error)
 
 // HelperOptions carries evaluated arguments and block closures. It is valid
-// only during the helper call.
+// only during the helper call: the render state behind it is reused by
+// later renders, possibly on other goroutines.
 type HelperOptions struct {
 	Name string         // helper name as written in the template
 	Args []any          // evaluated positional args
@@ -36,6 +37,15 @@ type HelperOptions struct {
 	s           *renderState
 	this        any      // JS `this`
 	fn, inverse *program // block programs; nil = none (container.noop)
+	argv        [2]any   // backs Args of up to two values: one allocation per call, not two
+}
+
+// argSlice is an Args of n values, in o.argv when they fit.
+func (o *HelperOptions) argSlice(n int) []any {
+	if n <= len(o.argv) {
+		return o.argv[:n:n]
+	}
+	return make([]any, n)
 }
 
 // LegacyParams are what the legacy compile options add to a helper's
@@ -302,8 +312,10 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 		if err != nil || !block {
 			return v, err
 		}
-		return s.callHook("blockHelperMissing", blockHelperMissing,
-			&HelperOptions{Name: p.original, Args: []any{v}, s: s, this: ctx, fn: fn, inverse: inverse})
+		o := &HelperOptions{Name: p.original, s: s, this: ctx, fn: fn, inverse: inverse}
+		o.Args = o.argSlice(1)
+		o.Args[0] = v
+		return s.callHook("blockHelperMissing", blockHelperMissing, o)
 	}
 	// invokeAmbiguous: (helpers[name] || value), called if a function,
 	// helperMissing if null.
@@ -338,7 +350,8 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 	if o == nil {
 		o = &HelperOptions{Name: name, s: s, fn: fn, inverse: inverse}
 	}
-	o.Args, o.this = []any{v}, ctx // ambiguousBlockValue reuses the options
+	o.Args, o.this = o.argSlice(1), ctx // ambiguousBlockValue reuses the options
+	o.Args[0] = v
 	return s.callHook("blockHelperMissing", blockHelperMissing, o)
 }
 
@@ -347,7 +360,8 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 // (helpers[name] || nonHelper || helperMissing).call(this, ...args, options).
 func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any, error) {
 	p := c.callee
-	o := &HelperOptions{Name: p.original, s: s, this: helperThis(ctx), fn: fn, inverse: inverse}
+	o := s.freeOpts.get()
+	*o = HelperOptions{Name: p.original, s: s, this: helperThis(ctx), fn: fn, inverse: inverse}
 	if err := s.args(c, ctx, o); err != nil {
 		return nil, err
 	}
@@ -357,7 +371,7 @@ func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any,
 		if h == nil { // JS: TypeError, helpers[name] is undefined
 			return nil, &Error{Message: "Missing helper: \"" + o.Name + "\""}
 		}
-		return s.callHelper(o.Name, h, builtin, o)
+		return s.callOwned(h, builtin, o)
 	}
 	var h Helper
 	builtin := false
@@ -377,12 +391,23 @@ func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any,
 			return s.callHook("helperMissing", helperMissing, o)
 		}
 	}
-	return s.callHelper(o.Name, h, builtin, o)
+	return s.callOwned(h, builtin, o)
+}
+
+// callOwned is callHelper for invokeHelper's own options, which it
+// recycles once a builtin is done with them. User code may keep them, and
+// log hands o.Args to the Logger, so those are left to the GC.
+func (s *renderState) callOwned(h Helper, builtin bool, o *HelperOptions) (any, error) {
+	v, err := s.callHelper(o.Name, h, builtin, o)
+	if builtin && o.Name != "log" {
+		s.freeOpts.put(o)
+	}
+	return v, err
 }
 
 // args evaluates c's params and hash into o.Args and o.Hash (JS setupParams).
 func (s *renderState) args(c *call, ctx any, o *HelperOptions) error {
-	o.Args = make([]any, len(c.params))
+	o.Args = o.argSlice(len(c.params))
 	for i, n := range c.params {
 		v, err := s.param(n, ctx)
 		if err != nil {

@@ -1,27 +1,19 @@
+//go:build !race
+
+// The race detector makes sync.Pool drop items at random, so allocation
+// counts only hold without it (benchmarks under -race mean nothing anyway).
+
 package handlebars
 
 import (
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/nikthespirit/go-handlebars/internal/benchdata"
 )
 
 // Run: go test -bench . -benchmem -run '^$'
-
-func compileScenario(tb testing.TB, sc benchdata.Scenario) *Template {
-	tb.Helper()
-	t, err := Parse(sc.Template)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	for name, src := range sc.Partials {
-		if err := t.RegisterPartial(name, src); err != nil {
-			tb.Fatal(err)
-		}
-	}
-	return t
-}
 
 // BenchmarkRender renders each scenario to a string.
 func BenchmarkRender(b *testing.B) {
@@ -62,5 +54,42 @@ func BenchmarkParse(b *testing.B) {
 				compileScenario(b, sc)
 			}
 		})
+	}
+}
+
+// TestRenderAllocs pins the allocation-free renders, so a regression fails
+// go test, not just a benchmark. AllocsPerRun warms up once (filling the
+// state pool) and divides by the run count with integer division, so a
+// rare pool miss after a GC can't make it flaky.
+func TestRenderAllocs(t *testing.T) {
+	type tc struct {
+		name string
+		tpl  *Template
+		data any
+	}
+	var cases []tc
+	for _, sc := range benchdata.Scenarios {
+		cases = append(cases, tc{sc.Name, compileScenario(t, sc), sc.Data()})
+	}
+	esc, _ := Parse("{{s}}")
+	cases = append(cases, tc{"escape-only", esc, map[string]any{"s": strings.Repeat("<a href=\"x\">'&'=`</a>", 64)}})
+	// builtins nested in a loop recycle their options and frames
+	nested, _ := Parse("{{#each items as |it|}}{{#if it.id}}{{#with it}}{{lookup . 'name'}}{{/with}}{{/if}}{{/each}}")
+	cases = append(cases, tc{"nested-builtins", nested, benchdata.Scenarios[1].Data()})
+
+	for _, c := range cases {
+		n := testing.AllocsPerRun(50, func() {
+			if err := c.tpl.RenderTo(io.Discard, c.data); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if n != 0 {
+			t.Errorf("%s: RenderTo makes %v allocations per render, want 0", c.name, n)
+		}
+	}
+	// Render allocates its result string and nothing else.
+	static := cases[0]
+	if n := testing.AllocsPerRun(50, func() { static.tpl.Render(static.data) }); n != 1 {
+		t.Errorf("static: Render makes %v allocations per render, want 1", n)
 	}
 }

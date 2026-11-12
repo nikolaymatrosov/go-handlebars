@@ -1,8 +1,11 @@
 package handlebars
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"strings"
+	"sync"
 )
 
 // The renderer walks the AST the way handlebars.js compiled code runs:
@@ -84,17 +87,22 @@ func appendIndented[S string | []byte](o *outWriter, s S, limit int) {
 			o.buf = append(o.buf, in...)
 		}
 		o.bol = len(o.indents)
-		i := 0
-		for i < len(s) && s[i] != '\n' {
-			i++
-		}
-		if i < len(s) {
-			i++
-			o.bol = 0
+		i := len(s)
+		if nl := indexNL(s); nl >= 0 {
+			i, o.bol = nl+1, 0
 		}
 		o.buf = append(o.buf, s[:i]...)
 		s = s[i:]
 	}
+}
+
+// indexNL is strings/bytes.IndexByte(s, '\n'). The any(s) assertion is
+// decided per instantiation at compile time: neither one allocates.
+func indexNL[S string | []byte](s S) int {
+	if b, ok := any(s).([]byte); ok {
+		return bytes.IndexByte(b, '\n')
+	}
+	return strings.IndexByte(string(s), '\n')
 }
 
 func (o *outWriter) pushIndent(indent string) { o.indents = append(o.indents, indent) }
@@ -113,10 +121,13 @@ func (o *outWriter) flush() error {
 	return err
 }
 
-// renderState is one render's mutable state.
+// renderState is one render's mutable state. States are pooled: a
+// render takes one with newState and gives it back with release, so
+// renders reuse its writer, stacks and buffers.
 type renderState struct {
 	t     *Template
 	out   *outWriter // current sink; renderSub swaps in a sub-writer
+	root  outWriter  // the render's own writer: out outside sub-renders
 	spare []byte     // a finished sub-writer's buffer, reused by the next one
 	// depths are the JS depths, innermost last: JS depths[n] is
 	// depths[len-1-n]. A partial without compat starts a fresh stack: a
@@ -142,34 +153,124 @@ type renderState struct {
 	limits  Limits
 	ctx     context.Context // never nil
 	done    <-chan struct{} // ctx.Done(); nil when ctx can't be cancelled
+
+	frames   [2]dataFrame   // the root @data frames (rootFrame)
+	rootVars map[string]any // frames[0].vars when it holds just root
+
+	// Builtin helpers are library code that keeps neither its options nor
+	// its {{#each}} state past the call, so both are recycled: an {{#if}}
+	// inside an {{#each}} over 1000 items drops from 1000 allocations
+	// (128 KB) per render to none.
+	freeOpts freeList[HelperOptions]
+	freeRuns freeList[eachRun]
+}
+
+// freeList recycles values whose owner is done with them; put zeroes them.
+type freeList[T any] []*T
+
+func (l *freeList[T]) get() *T {
+	n := len(*l)
+	if n == 0 {
+		return new(T)
+	}
+	x := (*l)[n-1]
+	*l = (*l)[:n-1]
+	return x
+}
+
+func (l *freeList[T]) put(x *T) {
+	var zero T
+	*x = zero
+	*l = append(*l, x)
+}
+
+var statePool = sync.Pool{New: func() any { return new(renderState) }}
+
+// maxPooledBuf caps the buffers a released state keeps: enough for a
+// page-sized Render to reuse its buffer, while a huge one doesn't pin its
+// output's worth of memory in the pool.
+const maxPooledBuf = 256 << 10
+
+// stackSize is the initial capacity of a state's depths and bps.
+const stackSize = 16
+
+// newState takes a state from the pool for a render of t into w (nil:
+// keep the output in s.root.buf).
+func newState(t *Template, ctx context.Context, w io.Writer) *renderState {
+	s := statePool.Get().(*renderState)
+	s.t, s.opts, s.limits, s.ctx, s.done = t, &t.opts, t.opts.Limits.withDefaults(), ctx, ctx.Done()
+	s.root.w, s.root.emitted, s.root.max = w, &s.emitted, s.limits.MaxOutputSize
+	if cap(s.root.buf) < flushSize {
+		s.root.buf = make([]byte, 0, flushSize)
+	}
+	// A partial pushes onto a view past the root stacks' entries, which
+	// can't keep what it grows, so the stacks start with room to nest.
+	if cap(s.depths) < stackSize {
+		s.depths, s.bps = make([]any, 0, stackSize), make([]bpFrame, 0, stackSize)
+	}
+	s.out = &s.root
+	return s
+}
+
+// release clears s and returns it to the pool. It keeps the stacks and
+// buffers, emptied, but nothing from the render (data, writer, template),
+// so a pooled state pins no caller memory.
+func (s *renderState) release() {
+	clear(s.depths[:cap(s.depths)])
+	clear(s.bps[:cap(s.bps)])
+	clear(s.root.indents[:cap(s.root.indents)])
+	clear(s.rootVars)
+	*s = renderState{
+		root:     outWriter{buf: pooledBuf(s.root.buf), indents: s.root.indents[:0], tmp: pooledBuf(s.root.tmp)},
+		spare:    pooledBuf(s.spare),
+		depths:   s.depths[:0],
+		bps:      s.bps[:0],
+		rootVars: s.rootVars,
+		// Their entries were zeroed by put; at most one per nesting level.
+		freeOpts: s.freeOpts,
+		freeRuns: s.freeRuns,
+	}
+	statePool.Put(s)
+}
+
+func pooledBuf(b []byte) []byte {
+	if cap(b) > maxPooledBuf {
+		return nil
+	}
+	return b[:0]
 }
 
 // rootFrame is runtime.js initData: dataVars is used as is when it sets
 // root; otherwise a child frame (createFrame) holds root = the context, so
 // `@../x` from the root frame still reaches dataVars.
-func rootFrame(ctx any, dataVars map[string]any) *dataFrame {
+func (s *renderState) rootFrame(ctx any, dataVars map[string]any) *dataFrame {
+	f := &s.frames[0]
 	if _, ok := dataVars["root"]; ok {
-		return &dataFrame{vars: dataVars}
+		*f = dataFrame{vars: dataVars}
+		return f
 	}
-	f := &dataFrame{vars: map[string]any{"root": ctx}}
+	if s.rootVars == nil {
+		s.rootVars = make(map[string]any, 1)
+	}
+	s.rootVars["root"] = ctx
+	*f = dataFrame{vars: s.rootVars}
 	if dataVars != nil {
-		f.parent = &dataFrame{vars: dataVars}
+		s.frames[1] = dataFrame{vars: dataVars}
+		f.parent = &s.frames[1]
 	}
 	return f
 }
 
-func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVars map[string]any) error {
-	s := &renderState{t: t, out: out, opts: &t.opts, limits: t.opts.Limits.withDefaults(), ctx: ctx, done: ctx.Done()}
-	out.emitted, out.max = &s.emitted, s.limits.MaxOutputSize
-	if err := ctx.Err(); err != nil {
+func (s *renderState) render(data any, dataVars map[string]any) error {
+	if err := s.ctx.Err(); err != nil {
 		return err
 	}
-	if t.opts.Data == nil || *t.opts.Data {
-		s.data = rootFrame(data, dataVars)
+	if s.opts.Data == nil || *s.opts.Data {
+		s.data = s.rootFrame(data, dataVars)
 	}
-	p, err := s.wrap(t.prog) // before depths are seeded: JS main's decorators get options.depths || []
+	p, err := s.wrap(s.t.prog) // before depths are seeded: JS main's decorators get options.depths || []
 	if err == nil {
-		s.depths = append(make([]any, 0, 8), data)
+		s.depths = append(s.depths, data)
 		err = s.run(p, data, nil)
 	}
 	if err != nil {
@@ -186,7 +287,7 @@ func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVar
 	if s.ops > s.limits.MaxOps {
 		return &LimitError{What: "ops", Max: s.limits.MaxOps}
 	}
-	return out.flush()
+	return s.root.flush()
 }
 
 // step counts one op and, every 1024 ops, checks the RenderCtx context.
@@ -416,9 +517,9 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 		if s.opts.StringParams {
 			return n.legacy, nil
 		}
-		return n.value, nil
+		return n.boxed, nil
 	case *numLit:
-		return n.value, nil
+		return n.boxed, nil
 	case *boolLit:
 		return n.value, nil
 	}

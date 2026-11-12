@@ -352,7 +352,7 @@ func (p *parser) helperName(expected tokSet) (node, error) {
 		return p.path(t, true)
 	case tSTRING:
 		p.next()
-		n := &strLit{loc: at(t), value: t.text}
+		n := &strLit{loc: at(t), value: t.text, boxed: t.text}
 		if p.opts.StringParams {
 			n.legacy = stringParam(t.text)
 		}
@@ -360,7 +360,7 @@ func (p *parser) helperName(expected tokSet) (node, error) {
 	case tNUMBER:
 		p.next()
 		f, _ := strconv.ParseFloat(t.text, 64) // lexer guarantees -?\d+(\.\d+)?; overflow gives ±Inf like JS
-		return &numLit{at(t), f}, nil
+		return &numLit{loc: at(t), value: f, boxed: f}, nil
 	case tBOOLEAN:
 		p.next()
 		return &boolLit{at(t), t.text == "true"}, nil

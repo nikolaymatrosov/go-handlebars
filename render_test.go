@@ -1,12 +1,16 @@
 package handlebars
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/nikthespirit/go-handlebars/internal/benchdata"
 )
 
 func mustRender(t *testing.T, opts Options, src string, data any) string {
@@ -49,6 +53,8 @@ func TestAppendJSNumber(t *testing.T) {
 		{1e21, "1e+21"}, {1e20, "100000000000000000000"}, {1e-7, "1e-7"}, {1e-6, "0.000001"},
 		{math.Copysign(0, -1), "0"}, {math.NaN(), "NaN"}, {math.Inf(-1), "-Infinity"},
 		{tenth + fifth, "0.30000000000000004"}, {-12.5, "-12.5"}, {1.5e300, "1.5e+300"}, {123e-20, "1.23e-18"},
+		{math.Nextafter(1e-6, 0), "9.999999999999997e-7"}, {-1e-6, "-0.000001"}, {math.Nextafter(1e21, 0), "999999999999999900000"},
+		{-1e21, "-1e+21"}, {5e-324, "5e-324"}, {1e-100, "1e-100"}, {math.Inf(1), "Infinity"},
 	}
 	for _, c := range cases {
 		if got := string(appendJSNumber(nil, c.f)); got != c.want {
@@ -654,6 +660,76 @@ func TestLegacyOptions(t *testing.T) {
 		data := map[string]any{"arr": []any{map[string]any{"n": 1}}, "foo": map[string]any{"bar": "x"}}
 		if got, err := tpl.Render(data); err != nil || got != c.want {
 			t.Errorf("%s = %q, %v; want %q", c.src, got, err, c.want)
+		}
+	}
+}
+
+func compileScenario(tb testing.TB, sc benchdata.Scenario) *Template {
+	tb.Helper()
+	t, err := Parse(sc.Template)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	for name, src := range sc.Partials {
+		if err := t.RegisterPartial(name, src); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return t
+}
+
+// TestRenderParallel renders each compiled scenario from many goroutines
+// at once (meant for -race): a pooled render state is never shared.
+func TestRenderParallel(t *testing.T) {
+	for _, sc := range benchdata.Scenarios {
+		tpl, data := compileScenario(t, sc), sc.Data()
+		want, err := tpl.Render(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		for g := 0; g < 8; g++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				var buf bytes.Buffer
+				for i := 0; i < 10; i++ {
+					buf.Reset()
+					err := tpl.RenderTo(&buf, data)
+					got, err2 := tpl.Render(data)
+					if err != nil || err2 != nil || buf.String() != want || got != want {
+						t.Errorf("%s: concurrent render differs (%v, %v)", sc.Name, err, err2)
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+// TestPooledStateReset: a render that fails deep inside loops, block
+// params and an indented partial leaves nothing behind for the next one.
+func TestPooledStateReset(t *testing.T) {
+	bad, err := Parse("{{#each items as |it i|}}\n  {{> p}}\n{{/each}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bad.RegisterPartial("p", "{{#with this}}{{boom}}{{/with}}"); err != nil {
+		t.Fatal(err)
+	}
+	bad.RegisterHelper("boom", func(*HelperOptions) (any, error) { return nil, errors.New("boom") })
+	good, err := Parse("a\n{{x}}\n{{@root.x}}{{#each items as |v|}}{{v}}{{@index}}{{/each}}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := bad.Render(map[string]any{"items": []any{1, 2}}); err == nil {
+			t.Fatal("bad: no error")
+		}
+		got, err := good.Render(map[string]any{"x": i, "items": []any{"q"}})
+		if want := fmt.Sprintf("a\n%d\n%dq0\n", i, i); err != nil || got != want {
+			t.Fatalf("after a failed render: %q, %v; want %q", got, err, want)
 		}
 	}
 }

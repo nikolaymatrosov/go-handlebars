@@ -103,7 +103,7 @@ func ParseWithOptions(src string, opts Options) (*Template, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Template{prog: prog, opts: opts, bufHint: min(2*len(src), 4096)}, nil
+	return &Template{prog: prog, opts: opts}, nil
 }
 
 // Template is a parsed template.
@@ -113,7 +113,6 @@ type Template struct {
 	helpers    map[string]Helper
 	partials   map[string]partialDef
 	decorators map[string]decorator
-	bufHint    int // Render's initial buffer size
 
 	// Logger receives {{log}} output: level is "debug", "info", "warn",
 	// "error" or "log" (an out-of-range numeric level). Nil discards it.
@@ -130,11 +129,14 @@ func (t *Template) RegisterHelper(name string, h Helper) {
 }
 
 func (t *Template) Render(data any) (string, error) {
-	out := outWriter{buf: make([]byte, 0, t.bufHint)}
-	if err := t.render(context.Background(), &out, data, nil); err != nil {
-		return "", err
+	s := newState(t, context.Background(), nil)
+	str := ""
+	err := s.render(data, nil)
+	if err == nil {
+		str = string(s.root.buf)
 	}
-	return string(out.buf), nil
+	s.release()
+	return str, err
 }
 
 func (t *Template) RenderTo(w io.Writer, data any) error {
@@ -155,8 +157,10 @@ func (t *Template) RenderWithData(w io.Writer, data any, dataVars map[string]any
 }
 
 func (t *Template) renderTo(ctx context.Context, w io.Writer, data any, dataVars map[string]any) error {
-	out := outWriter{w: w, buf: make([]byte, 0, flushSize)}
-	return t.render(ctx, &out, data, dataVars)
+	s := newState(t, ctx, w)
+	err := s.render(data, dataVars)
+	s.release()
+	return err
 }
 
 // SafeString is written to output without HTML escaping.

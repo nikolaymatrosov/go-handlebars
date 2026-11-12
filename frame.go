@@ -3,26 +3,28 @@ package handlebars
 // dataFrame is a handlebars.js @data object (utils.js createFrame): a child
 // sees its parent's variables unless it sets its own, and `@../x` reads the
 // parent (depth walks _parent). Variables are plain fields so an {{#each}}
-// reuses one frame for all its iterations.
+// reuses one frame for all its iterations. The bools sit together at the
+// end so a frame is 72 bytes (size class 80, not 96).
 type dataFrame struct {
 	parent *dataFrame
 	vars   map[string]any // seeded or helper-supplied variables
 
-	loop        bool // @key @index @first @last are set (each)
-	key         string
-	arr         bool // iterating an array: @key is the index
-	index       int
-	first, last bool
+	key   string // @key, when loop and not arr
+	index int    // @index
 
-	// @partial-block, set by partial calls (runtime.js invokePartial). A
-	// set nil block hides the enclosing one.
-	blockSet bool
-	block    *partialBlock
+	// block is @partial-block when blockSet, set by partial calls
+	// (runtime.js invokePartial). A set nil block hides the enclosing one.
+	block *partialBlock
 
 	// contextPath is JS data.contextPath as TrackIDs builtins and partials
 	// set it; "" = unset (JS only ever sets an empty one where the
 	// inherited one is falsy too).
 	contextPath string
+
+	loop        bool // @key @index @first @last are set (each)
+	arr         bool // iterating an array: @key is the index
+	first, last bool
+	blockSet    bool
 }
 
 // newFrame is createFrame(options.data) extended with vars, so an empty

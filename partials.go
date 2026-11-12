@@ -1,9 +1,6 @@
 package handlebars
 
-import (
-	"slices"
-	"strconv"
-)
+import "strconv"
 
 // Partials port compiler.js PartialStatement, runtime.js
 // invokePartialWrapper / resolvePartial / invokePartial, and decorators
@@ -68,16 +65,27 @@ type closure struct {
 // the creator moves on, and a saved @partial-block can be replayed later
 // (FnTo dataVars). Copies have no spare capacity, so every run of the
 // closure appends to its own. ownFrame adds p's (param-less) frame.
+// The copies share one []any and one []string, so a closure costs at
+// most four allocations however deep the scope. The copy is O(depth),
+// which MaxRenderDepth bounds, so it charges no ops.
 func (s *renderState) closure(p *program, depths []any, ownFrame bool) closure {
+	nv, ni := len(depths), 0
+	for _, f := range s.bps {
+		nv, ni = nv+len(f.vals), ni+len(f.ids)
+	}
+	vals := append(make([]any, 0, nv), depths...) // depths, then each frame's vals
+	ids := make([]string, 0, ni)
 	n := len(s.bps)
 	if ownFrame {
 		n++
 	}
 	bps := make([]bpFrame, n)
 	for i, f := range s.bps {
-		bps[i] = bpFrame{slices.Clone(f.vals), slices.Clone(f.ids)}
+		v, d := len(vals), len(ids)
+		vals, ids = append(vals, f.vals...), append(ids, f.ids...)
+		bps[i] = bpFrame{vals[v:len(vals):len(vals)], ids[d:len(ids):len(ids)]}
 	}
-	return closure{p, append(make([]any, 0, len(depths)), depths...), bps, s.opts}
+	return closure{p, vals[:len(depths):len(depths)], bps, s.opts}
 }
 
 // inlinePartial is a {{#*inline "name"}} block in scope (JS
