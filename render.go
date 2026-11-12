@@ -125,8 +125,8 @@ type renderState struct {
 	// data is the current @data frame (JS options.data); nil when
 	// Options.Data is false.
 	data *dataFrame
-	// inlines are the {{#*inline}} partials in scope, innermost last.
-	inlines []inlinePartial
+	// inlines are the {{#*inline}} partials in scope, innermost first.
+	inlines *inlinePartial
 	opts    *Options // of the template being run: the root's or a partial's
 	ops     int
 	// emitted is the output byte count every outWriter of this render shares.
@@ -160,7 +160,7 @@ func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVar
 	if t.opts.Data == nil || *t.opts.Data {
 		s.data = rootFrame(data, dataVars)
 	}
-	if err := s.run(t.prog, data); err != nil {
+	if err := s.run(t.prog, data, nil); err != nil {
 		return err
 	}
 	// Both counters stay over once exceeded, so a LimitError a helper
@@ -203,14 +203,18 @@ func (s *renderState) renderProgramBP(p *program, ctx any, blockParams []any) er
 	if s.depth >= s.limits.MaxRenderDepth {
 		return &LimitError{What: "render depth", Max: s.limits.MaxRenderDepth}
 	}
-	top := s.depths[len(s.depths)-1]
+	outer := s.depths
+	var top any // JS depths[0]; undefined when an inline partial captured []
+	if len(outer) > 0 {
+		top = outer[len(outer)-1]
+	}
 	push := !sameContext(ctx, top) && !(ctx == any(nullCtx{}) && isNull(top))
 	if push {
 		s.depths = append(s.depths, ctx)
 	}
 	s.depth++
 	s.bps = append(s.bps, blockParams)
-	err := s.run(p, ctx)
+	err := s.run(p, ctx, outer)
 	s.bps = s.bps[:len(s.bps)-1]
 	s.depth--
 	if push {

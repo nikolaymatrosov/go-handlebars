@@ -56,9 +56,6 @@ func (t *Template) setPartial(name string, d partialDef, remove bool) {
 // closure is a block program with the scope it was written in (JS
 // wrapProgram's depths and blockParams, plus its template's options):
 // inline partials and partial blocks run in it wherever they are called.
-// The slices are clipped, so running the closure appends to copies.
-// ponytail: that is two small allocations per inline partial or partial
-// block call; a persistent (linked) depth stack would avoid them.
 type closure struct {
 	prog   *program
 	depths []any
@@ -66,23 +63,38 @@ type closure struct {
 	opts   *Options
 }
 
-func (s *renderState) closure(p *program) closure {
-	return closure{p, slices.Clip(s.depths), slices.Clip(s.bps), s.opts}
+// closure binds p to depths and the current block params. Both are
+// copied: the stack slots and {{#each}}'s block-param slice are reused once
+// the creator moves on, and a saved @partial-block can be replayed later
+// (FnTo dataVars). Copies have no spare capacity, so every run of the
+// closure appends to its own. ownFrame adds p's (param-less) frame.
+func (s *renderState) closure(p *program, depths []any, ownFrame bool) closure {
+	n := len(s.bps)
+	if ownFrame {
+		n++
+	}
+	bps := make([][]any, n)
+	for i, f := range s.bps {
+		bps[i] = slices.Clone(f)
+	}
+	return closure{p, append(make([]any, 0, len(depths)), depths...), bps, s.opts}
 }
 
 // inlinePartial is a {{#*inline "name"}} block in scope (JS
-// container.partials[name] set by the inline decorator).
+// container.partials[name] set by the inline decorator). Scopes are
+// immutable linked lists, innermost first, so capturing one is free.
 type inlinePartial struct {
 	name string
 	closure
+	next *inlinePartial
 }
 
 // partialBlock is the block of {{#> name}}block{{/name}}: JS
 // data['partial-block'], which the partial renders with {{> @partial-block}}.
 type partialBlock struct {
 	closure
-	inlines []inlinePartial // the caller's inline partials: they stay visible in the block
-	outer   *partialBlock   // the @partial-block where the block was written
+	inlines *inlinePartial // the caller's inline partials: they stay visible in the block
+	outer   *partialBlock  // the @partial-block where the block was written
 }
 
 // partialBlock is the current @partial-block (nil if none).
@@ -120,10 +132,13 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 	}
 	// resolvePartial sees the caller's partials, before the block's inline
 	// partials join them.
-	tg := s.resolve(name, dynamic)
+	tg, err := s.resolve(name, dynamic)
+	if err != nil {
+		return err
+	}
 	var block *partialBlock
 	if n.program != nil {
-		block = &partialBlock{closure: s.closure(n.program), inlines: slices.Clip(s.inlines), outer: s.partialBlock()}
+		block = &partialBlock{closure: s.closure(n.program, s.depths, false), inlines: s.inlines, outer: s.partialBlock()}
 		if !tg.found() {
 			tg.block = block // the failover content
 		}
@@ -151,9 +166,7 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 			s.data = &dataFrame{parent: s.data, blockSet: true, block: block}
 		}
 		if len(block.prog.decorators) > 0 { // JS fn.partials: the block's inline partials reach the partial
-			sc := s.closure(nil)
-			sc.bps = slices.Clip(append(sc.bps, nil)) // the block program's own frame
-			err = s.decorate(block.prog, ctx, sc)
+			err = s.decorate(block.prog, ctx, s.closure(nil, s.depths, true))
 		}
 	}
 	if err == nil {
@@ -185,11 +198,12 @@ func (s *renderState) invoke(tg target, ctx any, name string) error {
 		if !s.opts.Compat { // only compat passes the caller's depths
 			s.depths = s.depths[len(s.depths):]
 		}
+		outer := s.depths
 		if len(s.depths) == 0 || !sameContext(ctx, s.depths[len(s.depths)-1]) {
 			s.depths = append(s.depths, ctx)
 		}
 		s.bps, s.opts = s.bps[len(s.bps):], &tg.def.t.opts
-		return s.run(tg.def.t.prog, ctx)
+		return s.run(tg.def.t.prog, ctx, outer)
 	case tg.inline != nil:
 		c := *tg.inline
 		s.depths, s.bps, s.opts = c.depths, c.bps, c.opts
@@ -258,11 +272,16 @@ func (s *renderState) partialContext(n *partialNode, ctx any) (any, error) {
 
 // resolve finds partial name (JS resolvePartial): inline partials innermost
 // first, then registered ones; a static @partial-block is the current block.
-func (s *renderState) resolve(name string, dynamic bool) (tg target) {
-	for i := len(s.inlines) - 1; i >= 0; i-- {
-		if s.inlines[i].name == name {
-			tg.inline = &s.inlines[i].closure
-			return tg
+// Each inline partial scanned costs an op, so many of them can't make a
+// partial call arbitrarily slow.
+func (s *renderState) resolve(name string, dynamic bool) (tg target, err error) {
+	for e := s.inlines; e != nil; e = e.next {
+		if err := s.step(); err != nil {
+			return tg, err
+		}
+		if e.name == name {
+			tg.inline = &e.closure
+			return tg, nil
 		}
 	}
 	if d, ok := s.t.partials[name]; ok {
@@ -270,33 +289,37 @@ func (s *renderState) resolve(name string, dynamic bool) (tg target) {
 	} else if !dynamic && name == "@partial-block" {
 		tg.block = s.partialBlock()
 	}
-	return tg
+	return tg, nil
 }
 
 // run renders p's body after its decorators (JS executeDecorators). The
 // only decorator so far is inline; the partials it defines are visible
 // until p returns, as decorators/inline.js swaps container.partials around
-// the program.
-func (s *renderState) run(p *program, ctx any) error {
+// the program. outer is the depths before p's context was pushed: JS hands
+// decorators the wrap-time depths (options.depths || [] for a template).
+func (s *renderState) run(p *program, ctx any, outer []any) error {
 	if p == nil { // a zero Template
 		return nil
 	}
 	if len(p.decorators) == 0 {
 		return s.body(p.body, ctx)
 	}
-	n := len(s.inlines)
-	err := s.decorate(p, ctx, s.closure(nil))
+	scope := s.inlines
+	err := s.decorate(p, ctx, s.closure(nil, outer, false))
 	if err == nil {
 		err = s.body(p.body, ctx)
 	}
-	s.inlines = s.inlines[:n]
+	s.inlines = scope
 	return err
 }
 
-// decorate runs p's decorators: each {{#*inline "name"}} adds its block,
-// in scope sc, to the inline partials.
+// decorate runs p's decorators, one op each: each {{#*inline "name"}}
+// adds its block, in scope sc, to the inline partials.
 func (s *renderState) decorate(p *program, ctx any, sc closure) error {
 	for _, d := range p.decorators {
+		if err := s.step(); err != nil {
+			return err
+		}
 		b, ok := d.(*blockNode)
 		if ok {
 			path, _ := jsOriginal(b.path)
@@ -313,7 +336,7 @@ func (s *renderState) decorate(p *program, ctx any, sc closure) error {
 			}
 		}
 		sc.prog = b.program
-		s.inlines = append(s.inlines, inlinePartial{jsKey(name), sc})
+		s.inlines = &inlinePartial{jsKey(name), sc, s.inlines}
 	}
 	return nil
 }

@@ -395,3 +395,43 @@ func TestPartialsExtra(t *testing.T) {
 		}
 	}
 }
+
+func TestPartialScopes(t *testing.T) {
+	// A saved @partial-block replays with the scope it was created in, not
+	// with stack slots or {{#each}} state reused since (JS: "<a>").
+	tpl, _ := Parse(`{{#each items as |x|}}{{#> p}}<{{x}}>{{/p}}{{/each}}|{{#replay}}{{> @partial-block}}{{/replay}}`)
+	var saved any
+	tpl.RegisterHelper("save", func(o *HelperOptions) (any, error) {
+		if saved == nil {
+			saved = o.DataVar("partial-block")
+		}
+		return nil, nil
+	})
+	tpl.RegisterHelper("replay", func(o *HelperOptions) (any, error) {
+		var sb strings.Builder
+		err := o.FnTo(&sb, o.Ctx(), nil, map[string]any{"partial-block": saved})
+		return sb.String(), err
+	})
+	if err := tpl.RegisterPartial("p", "{{save}}{{> @partial-block}}"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := tpl.Render(map[string]any{"items": []any{"a", "b", "c"}}); got != "<a><b><c>|<a>" || err != nil {
+		t.Errorf("replay = %q, %v; want %q", got, err, "<a><b><c>|<a>")
+	}
+
+	// JS decorators get the depths outside their program, so an inline
+	// partial's ../ skips the defining context, like a registered partial's.
+	data := map[string]any{"title": "T", "items": []any{map[string]any{"name": "a"}}}
+	for _, src := range []string{
+		`{{#*inline "row"}}{{name}} of {{../title}};{{/inline}}{{#each items}}{{> row}}{{/each}}`,
+		`{{#each items}}{{> row}}{{/each}}`,
+	} {
+		tpl, _ := Parse(src)
+		if err := tpl.RegisterPartial("row", "{{name}} of {{../title}};"); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := tpl.Render(data); got != "a of ;" || err != nil {
+			t.Errorf("%s = %q, %v; want %q", src, got, err, "a of ;")
+		}
+	}
+}

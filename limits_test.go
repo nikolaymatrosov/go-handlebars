@@ -2,7 +2,9 @@ package handlebars
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"time"
 )
 
 // Recursive and exponential partials must fail with a LimitError, fast.
@@ -44,4 +46,29 @@ func fanOut(n int) map[string]string {
 	}
 	m["p"+itoa(n)] = "x"
 	return m
+}
+
+// Inline decorators and the inline partials scanned per call cost ops, so
+// a template full of them stays within MaxOps.
+func TestInlinePartialOps(t *testing.T) {
+	inlines := strings.Repeat(`{{#*inline "i"}}x{{/inline}}`, 2000)
+	items := make([]any, 10000)
+	for _, src := range []string{
+		"{{#each items}}" + inlines + "{{/each}}",                                           // decorators run per iteration
+		`{{#*inline "first"}}{{/inline}}` + inlines + "{{#each items}}{{> first}}{{/each}}", // scan past 2000 per call
+	} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: 100_000}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		_, err = tpl.Render(map[string]any{"items": items})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("err = %v, want ops LimitError", err)
+		}
+		if d := time.Since(start); d > time.Second {
+			t.Errorf("took %v", d)
+		}
+	}
 }
