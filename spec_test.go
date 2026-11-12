@@ -37,18 +37,18 @@ type specTest struct {
 var specGate = map[string]int{
 	"tokenizer.json":          78,
 	"parser.json":             79,
-	"basic.json":              86,
-	"blocks.json":             23,
-	"builtins.json":           0,
-	"data.json":               0,
-	"helpers.json":            75,
+	"basic.json":              90,
+	"blocks.json":             31,
+	"builtins.json":           42,
+	"data.json":               3,
+	"helpers.json":            87,
 	"partials.json":           0,
-	"regressions.json":        0,
-	"strict.json":             0,
+	"regressions.json":        20,
+	"strict.json":             7,
 	"string-params.json":      0,
 	"subexpressions.json":     0,
 	"track-ids.json":          0,
-	"whitespace-control.json": 0,
+	"whitespace-control.json": 31,
 }
 
 // Task 1 hooks: tokenizer.json runner. Nil means not implemented (tests FAIL).

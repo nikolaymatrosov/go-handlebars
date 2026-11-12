@@ -45,7 +45,7 @@ func (o *HelperOptions) FnWith(ctx any) (string, error) { return o.s.renderStrin
 // options.fn(ctx, {blockParams})). The bytes count against MaxOutputSize;
 // w is the helper's own sink, not the template's output.
 func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars map[string]any) error {
-	return o.s.renderTo(w, o.fn, ctx, blockParams) // Task 7: dataVars become the block's @data frame
+	return o.s.renderTo(w, o.fn, ctx, blockParams, o.s.newFrame(dataVars))
 }
 
 // Inverse renders the {{else}} block with the helper's `this`.
@@ -53,11 +53,17 @@ func (o *HelperOptions) Inverse() (string, error) { return o.s.renderString(o.in
 
 // InverseTo renders the {{else}} block with ctx into w (JS options.inverse(ctx)).
 func (o *HelperOptions) InverseTo(w io.Writer, ctx any) error {
-	return o.s.renderTo(w, o.inverse, ctx, nil)
+	return o.s.renderTo(w, o.inverse, ctx, nil, nil)
 }
 
 // DataVar is the @name data variable visible to the helper.
-func (o *HelperOptions) DataVar(name string) any { return nil } // Task 7: @data frames
+func (o *HelperOptions) DataVar(name string) any {
+	if o.s == nil || o.s.data == nil {
+		return nil
+	}
+	v, _ := o.s.data.get(name)
+	return v
+}
 
 // Lookup resolves a dot-separated property path ("a.b") from Ctx(), one JS
 // options.lookupProperty per part. Function values are returned, not called.
@@ -172,11 +178,25 @@ func callPath(n node) *pathExpr {
 
 // helper is container.helpers[name]. runtime.js moves helperMissing and
 // blockHelperMissing to container.hooks, so templates can't call them.
-func (s *renderState) helper(name string) Helper {
+// builtin reports that h is a library builtin (called directly) rather
+// than user code (called through s.call).
+func (s *renderState) helper(name string) (h Helper, builtin bool) {
 	if name == "helperMissing" || name == "blockHelperMissing" {
-		return nil
+		return nil, false
 	}
-	return s.t.helpers[name] // Task 6: builtins, called directly rather than through s.call
+	if h = s.t.helpers[name]; h != nil {
+		return h, false
+	}
+	h = builtinHelper(name)
+	return h, h != nil
+}
+
+// callHelper runs a helper found by s.helper.
+func (s *renderState) callHelper(name string, h Helper, builtin bool, o *HelperOptions) (any, error) {
+	if builtin {
+		return h(o)
+	}
+	return s.call(name, h, o)
 }
 
 // callHook runs container.hooks[name]: the registered override (user
@@ -198,10 +218,10 @@ var ErrHelperPanic = errors.New("handlebars: helper panicked")
 // ErrHelperPanic error and the render state is restored, so the render
 // fails cleanly even if the panic hit mid-block. Builtins must not use it.
 func (s *renderState) call(name string, h Helper, o *HelperOptions) (v any, err error) {
-	out, nd, nb, depth := s.out, len(s.depths), len(s.bps), s.depth
+	out, nd, nb, depth, data := s.out, len(s.depths), len(s.bps), s.depth, s.data
 	defer func() {
 		if r := recover(); r != nil {
-			s.out, s.depths, s.bps, s.depth = out, s.depths[:nd], s.bps[:nb], depth
+			s.out, s.depths, s.bps, s.depth, s.data = out, s.depths[:nd], s.bps[:nb], depth, data
 			v, err = nil, fmt.Errorf("%w (%s): %v\n%s", ErrHelperPanic, name, r, debug.Stack())
 		}
 	}()
@@ -236,7 +256,7 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 	// invokeAmbiguous: (helpers[name] || value), called if a function,
 	// helperMissing if null.
 	name := p.parts[0]
-	h := s.helper(name)
+	h, builtin := s.helper(name)
 	registered, missing := h != nil, false
 	var v any
 	if !registered {
@@ -251,7 +271,7 @@ func (s *renderState) expr(c *call, ctx any, block bool, fn, inverse *program) (
 		if missing {
 			v, err = s.callHook("helperMissing", helperMissing, o)
 		} else {
-			v, err = s.call(name, h, o)
+			v, err = s.callHelper(name, h, builtin, o)
 		}
 		if err != nil || registered {
 			return v, err
@@ -292,15 +312,16 @@ func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any,
 	}
 	if c.kind == kindKnown {
 		o.Name = helperName(p)
-		h := s.helper(o.Name)
+		h, builtin := s.helper(o.Name)
 		if h == nil { // JS: TypeError, helpers[name] is undefined
 			return nil, &Error{Message: "Missing helper: \"" + o.Name + "\""}
 		}
-		return s.call(o.Name, h, o)
+		return s.callHelper(o.Name, h, builtin, o)
 	}
 	var h Helper
+	builtin := false
 	if len(p.parts) == 1 && !p.scoped && p.depth == 0 { // AST.helpers.simpleId
-		h = s.helper(p.parts[0])
+		h, builtin = s.helper(p.parts[0])
 	}
 	if h == nil {
 		nonHelper := s.lookup(p, ctx)
@@ -312,7 +333,7 @@ func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any,
 			return s.callHook("helperMissing", helperMissing, o)
 		}
 	}
-	return s.call(o.Name, h, o)
+	return s.callHelper(o.Name, h, builtin, o)
 }
 
 // helperThis is the JS helper call context: depth0 != null ? depth0 : nullContext.
@@ -347,17 +368,8 @@ func blockHelperMissing(o *HelperOptions) (any, error) {
 		if rv.Len() == 0 {
 			return nil, s.renderProgram(o.inverse, o.this)
 		}
-		// ponytail: JS calls helpers.each here; Task 6 swaps this loop for
-		// it (adds @index/@first/@last and block params).
-		for i := 0; i < rv.Len(); i++ {
-			if err := s.step(); err != nil {
-				return nil, err
-			}
-			if err := s.renderProgram(o.fn, rv.Index(i).Interface()); err != nil {
-				return nil, err
-			}
-		}
-		return nil, nil
+		h, builtin := s.helper("each") // JS instance.helpers.each, so an override applies
+		return s.callHelper("each", h, builtin, o)
 	}
 	return nil, s.renderProgram(o.fn, v)
 }

@@ -36,6 +36,17 @@ var specFuncs = map[string]any{
 	"27589ee64ef5": func(o *HelperOptions) (any, error) { return "bar", nil },
 	"4529e62c8f31": func(o *HelperOptions) (any, error) { return arg(o, 0), nil }, // (arg) => arg
 
+	// builtins.json
+	"02fce0ddd099": func(o *HelperOptions) (any, error) { v, _ := lookupProperty(o.Ctx(), "world"); return v, nil }, // function () {return this.world; }
+	"c192cfbc3fbb": func(o *HelperOptions) (any, error) { v, _ := lookupProperty(o.Ctx(), "foo"); return v, nil },   // function () {return this.foo; }
+	"b774e7e22542": func(o *HelperOptions) (any, error) { // function () { return {first: 'Alan', last: 'Johnson'}; }
+		return map[string]any{"first": "Alan", "last": "Johnson"}, nil
+	},
+	"70db6219bbbf": func(o *HelperOptions) (any, error) { return o.DataVar("exclaim"), nil }, // function(options) { return options.data && options.data.exclaim; }
+	"146425d52bb0": func(o *HelperOptions) (any, error) { // function () { return [{text: 'goodbye'}, {text: 'Goodbye'}, {text: 'GOODBYE'}]; }
+		return []any{map[string]any{"text": "goodbye"}, map[string]any{"text": "Goodbye"}, map[string]any{"text": "GOODBYE"}}, nil
+	},
+
 	// helpers.json
 	"1547467c4929": func(o *HelperOptions) (any, error) { // function (prefix) {
 		return `<a href="` + jsStr(arg(o, 0)) + "/" + jsStr(o.Lookup("url")) + `">` + jsStr(o.Lookup("text")) + "</a>", nil

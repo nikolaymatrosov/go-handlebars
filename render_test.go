@@ -287,3 +287,46 @@ type panicKC struct{}
 func (panicKC) Keys() []string         { return nil }
 func (panicKC) Get(string) (any, bool) { panic("library") }
 func (panicKC) Len() int               { return 0 }
+
+func TestBuiltinsExtra(t *testing.T) {
+	type S struct {
+		A int
+		B string
+	}
+	for _, c := range []struct {
+		src  string
+		data any
+		want string
+	}{
+		{"{{#each s}}{{@key}}={{this}}{{#unless @last}},{{/unless}}{{/each}}", map[string]any{"s": S{1, "x"}}, "A=1,B=x"},
+		{"{{#each m}}{{@key}}{{/each}}", map[string]any{"m": map[string]any{"b": 1, "a": 2}}, "ab"},
+		{"{{#each s}}x{{else}}none{{/each}}", map[string]any{"s": "str"}, "none"},
+		{"{{#if z includeZero=true}}y{{else}}n{{/if}}{{#if z}}y{{else}}n{{/if}}", map[string]any{"z": 0}, "yn"},
+		{"{{#each a}}{{#each ../a}}{{@../index}}{{@index}} {{/each}}{{/each}}", map[string]any{"a": []any{1, 2}}, "00 01 10 11 "},
+		{"{{#people}}{{@index}}{{/people}}", map[string]any{"people": []any{1, 2}}, "01"},
+		{"{{lookup a 1}}{{lookup n 'k'}}", map[string]any{"a": []any{"p", "q"}}, "q"},
+	} {
+		tpl, err := Parse(c.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := tpl.Render(c.data); err != nil || got != c.want {
+			t.Errorf("%s = %q, %v; want %q", c.src, got, err, c.want)
+		}
+	}
+	for src, want := range map[string]string{
+		"{{#if}}x{{/if}}": "#if requires exactly one argument", "{{#unless a b}}x{{/unless}}": "#unless requires exactly one argument",
+		"{{#with}}x{{/with}}": "#with requires exactly one argument", "{{#each}}x{{/each}}": "Must pass iterator to #each",
+	} {
+		tpl, _ := Parse(src)
+		if _, err := tpl.Render(nil); err == nil || err.Error() != want {
+			t.Errorf("%s: %v", src, err)
+		}
+	}
+	var got []string
+	tpl, _ := Parse("{{log 'a' 'b'}}{{log 'w' level='warn'}}{{log 'd' level='debug'}}{{log 'n' level=7}}")
+	tpl.Logger = func(level string, args ...any) { got = append(got, level+":"+jsStr(args[0])) }
+	if _, err := tpl.Render(nil); err != nil || strings.Join(got, " ") != "info:a warn:w log:n" {
+		t.Errorf("log: %v %v", got, err)
+	}
+}

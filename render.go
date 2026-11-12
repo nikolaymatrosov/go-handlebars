@@ -75,7 +75,10 @@ type renderState struct {
 	// rendered, innermost last (nil when the caller passed none). A path with
 	// pathExpr.bp set reads bps[len-1-bpDepth][bpIdx].
 	bps [][]any
-	ops int
+	// data is the current @data frame (JS options.data); nil when
+	// Options.Data is false.
+	data *dataFrame
+	ops  int
 	// emitted is the output byte count every outWriter of this render shares.
 	emitted int
 	limits  Limits
@@ -83,13 +86,16 @@ type renderState struct {
 	done    <-chan struct{} // ctx.Done(); nil when ctx can't be cancelled
 }
 
-func (t *Template) render(ctx context.Context, out *outWriter, data any) error {
+func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVars map[string]any) error {
 	s := &renderState{t: t, out: out, limits: t.opts.Limits.withDefaults(), ctx: ctx, done: ctx.Done()}
 	out.emitted, out.max = &s.emitted, s.limits.MaxOutputSize
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	s.depths = append(make([]any, 0, 8), data)
+	if t.opts.Data == nil || *t.opts.Data {
+		s.data = &dataFrame{vars: dataVars} // Task 7: @root, copy of dataVars
+	}
 	if err := s.body(t.prog.body, data); err != nil {
 		return err
 	}
@@ -149,12 +155,25 @@ func (s *renderState) renderProgramBP(p *program, ctx any, blockParams []any) er
 	return err
 }
 
+// renderFrame is renderProgramBP with df as the block's @data frame (JS
+// options.data); a nil df keeps the enclosing one.
+func (s *renderState) renderFrame(p *program, ctx any, blockParams []any, df *dataFrame) error {
+	if df == nil {
+		return s.renderProgramBP(p, ctx, blockParams)
+	}
+	prev := s.data
+	s.data = df
+	err := s.renderProgramBP(p, ctx, blockParams)
+	s.data = prev
+	return err
+}
+
 // renderString renders p with ctx to a string: JS options.fn(ctx).
 func (s *renderState) renderString(p *program, ctx any) (string, error) {
 	if p == nil {
 		return "", nil
 	}
-	buf, err := s.renderSub(nil, p, ctx, nil)
+	buf, err := s.renderSub(nil, p, ctx, nil, nil)
 	str := ""
 	if err == nil {
 		str = string(buf)
@@ -164,11 +183,11 @@ func (s *renderState) renderString(p *program, ctx any) (string, error) {
 }
 
 // renderTo renders p with ctx and block params into w.
-func (s *renderState) renderTo(w io.Writer, p *program, ctx any, blockParams []any) error {
+func (s *renderState) renderTo(w io.Writer, p *program, ctx any, blockParams []any, df *dataFrame) error {
 	if p == nil {
 		return nil
 	}
-	buf, err := s.renderSub(w, p, ctx, blockParams)
+	buf, err := s.renderSub(w, p, ctx, blockParams, df)
 	s.reuse(buf)
 	return err
 }
@@ -177,7 +196,7 @@ func (s *renderState) renderTo(w io.Writer, p *program, ctx any, blockParams []a
 // render's byte budget and flushes to w (nil: everything stays in the
 // returned buffer). Each call is one op, so a helper looping over an empty
 // block is still bounded by MaxOps.
-func (s *renderState) renderSub(w io.Writer, p *program, ctx any, blockParams []any) ([]byte, error) {
+func (s *renderState) renderSub(w io.Writer, p *program, ctx any, blockParams []any, df *dataFrame) ([]byte, error) {
 	if err := s.step(); err != nil {
 		return nil, err
 	}
@@ -185,7 +204,7 @@ func (s *renderState) renderSub(w io.Writer, p *program, ctx any, blockParams []
 	sub := &outWriter{w: w, buf: s.spare[:0], emitted: parent.emitted, max: parent.max}
 	s.spare = nil
 	s.out = sub
-	err := s.renderProgramBP(p, ctx, blockParams)
+	err := s.renderFrame(p, ctx, blockParams, df)
 	s.out = parent
 	if err == nil {
 		err = sub.flush()
@@ -261,11 +280,18 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 // lookup resolves a path like lookupOnContext: depth picks the context,
 // then each part is a lookupProperty, stopping at null/undefined.
 func (s *renderState) lookup(p *pathExpr, ctx any) any {
-	if p.data {
-		return nil // Task 7: @data
-	}
 	v, parts := ctx, p.parts
 	switch {
+	case p.data: // lookupData: depth walks _parent, then the first part is a frame var
+		f := s.data
+		for d := p.depth; d > 0 && f != nil; d-- {
+			f = f.parent
+		}
+		if f == nil || len(parts) == 0 {
+			return nil
+		}
+		v, _ = f.get(parts[0])
+		parts = parts[1:]
 	case p.bp: // lookupBlockParam
 		v = nil
 		if i := len(s.bps) - 1 - p.bpDepth; i >= 0 && p.bpIdx < len(s.bps[i]) {
