@@ -330,3 +330,11 @@ func TestBuiltinsExtra(t *testing.T) {
 		t.Errorf("log: %v %v", got, err)
 	}
 }
+
+func TestLoggerPanicRecovered(t *testing.T) {
+	tpl, _ := Parse("a{{log 'x'}}b")
+	tpl.Logger = func(string, ...any) { panic("boom") }
+	if _, err := tpl.Render(nil); !errors.Is(err, ErrHelperPanic) {
+		t.Errorf("err = %v, want ErrHelperPanic", err)
+	}
+}
