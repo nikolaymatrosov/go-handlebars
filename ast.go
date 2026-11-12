@@ -1,7 +1,6 @@
 package handlebars
 
 import (
-	"math"
 	"strconv"
 	"strings"
 )
@@ -134,52 +133,13 @@ func jsOriginal(n node) (string, byte) {
 	case *strLit:
 		return n.value, 's'
 	case *numLit:
-		return jsNumber(n.value), 'n'
+		return string(appendJSNumber(nil, n.value)), 'n'
 	case *boolLit:
 		return strconv.FormatBool(n.value), 'b'
 	case *nullLit:
 		return "null", 'l'
 	}
 	return "undefined", 'u' // undefinedLit, subExpr (no original)
-}
-
-// jsNumber formats f like JS Number.prototype.toString.
-func jsNumber(f float64) string {
-	switch {
-	case math.IsNaN(f):
-		return "NaN"
-	case math.IsInf(f, 1):
-		return "Infinity"
-	case math.IsInf(f, -1):
-		return "-Infinity"
-	case f == 0:
-		return "0"
-	}
-	s := strconv.FormatFloat(f, 'e', -1, 64) // shortest round-trip: [-]d.ddde±XX
-	sign := ""
-	if s[0] == '-' {
-		sign, s = "-", s[1:]
-	}
-	mant, exp, _ := strings.Cut(s, "e")
-	digits := strings.Replace(mant, ".", "", 1)
-	e, _ := strconv.Atoi(exp)
-	n, k := e+1, len(digits) // value = 0.digits × 10^n
-	switch {
-	case k <= n && n <= 21:
-		return sign + digits + strings.Repeat("0", n-k)
-	case 0 < n && n <= 21:
-		return sign + digits[:n] + "." + digits[n:]
-	case -6 < n && n <= 0:
-		return sign + "0." + strings.Repeat("0", -n) + digits
-	}
-	out := sign + digits[:1]
-	if k > 1 {
-		out += "." + digits[1:]
-	}
-	if e >= 0 {
-		return out + "e+" + strconv.Itoa(e)
-	}
-	return out + "e" + strconv.Itoa(e)
 }
 
 // printAST renders p exactly like handlebars.js compiler/printer.js,
@@ -233,7 +193,7 @@ func (pr *printer) accept(n node) string {
 	case *strLit:
 		return `"` + n.value + `"`
 	case *numLit:
-		return "NUMBER{" + jsNumber(n.value) + "}"
+		return "NUMBER{" + string(appendJSNumber(nil, n.value)) + "}"
 	case *boolLit:
 		return "BOOLEAN{" + strconv.FormatBool(n.value) + "}"
 	case *undefinedLit:

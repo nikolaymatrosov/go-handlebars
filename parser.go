@@ -392,8 +392,13 @@ func (p *parser) path(start token, data bool) (node, error) {
 		return nil, &Error{Line: pe.line, Column: pe.col, Message: "Invalid path: " + invalid}
 	}
 	pe.original = orig.String()
-	pe.scoped = strings.HasPrefix(pe.original, ".") || hasThisWord(pe.original)
+	pe.scoped = isScoped(pe.original)
 	return pe, nil
+}
+
+// isScoped is JS AST.helpers.scopedId: /^\.|this\b/ on a path's original.
+func isScoped(original string) bool {
+	return strings.HasPrefix(original, ".") || hasThisWord(original)
 }
 
 // hasThisWord reports whether s matches /this\b/.

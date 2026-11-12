@@ -37,7 +37,7 @@ type specTest struct {
 var specGate = map[string]int{
 	"tokenizer.json":          78,
 	"parser.json":             79,
-	"basic.json":              0,
+	"basic.json":              86,
 	"blocks.json":             0,
 	"builtins.json":           0,
 	"data.json":               0,

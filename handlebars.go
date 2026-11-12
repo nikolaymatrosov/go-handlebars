@@ -1,6 +1,4 @@
 // Package handlebars is a Handlebars template engine.
-//
-// Task 0: this file is the locked public API with stub bodies.
 package handlebars
 
 import (
@@ -101,34 +99,52 @@ func ParseWithOptions(src string, opts Options) (*Template, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Template{prog: prog, opts: opts}, nil
+	return &Template{prog: prog, opts: opts, bufHint: min(2*len(src), 4096)}, nil
 }
 
 // Template is a parsed template.
 type Template struct {
-	prog *program
-	opts Options
+	prog    *program
+	opts    Options
+	helpers map[string]Helper
+	bufHint int // Render's initial buffer size
 }
 
 // Registration is not concurrency-safe; register everything before rendering.
-func (t *Template) RegisterHelper(name string, h Helper) {}
+func (t *Template) RegisterHelper(name string, h Helper) {
+	if t.helpers == nil {
+		t.helpers = map[string]Helper{}
+	}
+	t.helpers[name] = h
+}
 
 func (t *Template) RegisterPartial(name, src string) error { return errNotImplemented }
 
 func (t *Template) RegisterPartialTemplate(name string, p *Template) {}
 
-func (t *Template) Render(data any) (string, error) { return "", errNotImplemented }
+func (t *Template) Render(data any) (string, error) {
+	out := outWriter{buf: make([]byte, 0, t.bufHint)}
+	if err := t.render(nil, &out, data); err != nil {
+		return "", err
+	}
+	return string(out.buf), nil
+}
 
-func (t *Template) RenderTo(w io.Writer, data any) error { return errNotImplemented }
+func (t *Template) RenderTo(w io.Writer, data any) error { return t.renderTo(nil, w, data) }
 
 // RenderCtx checks ctx.Err() every 1024 ops; rendering is otherwise identical.
 func (t *Template) RenderCtx(ctx context.Context, w io.Writer, data any) error {
-	return errNotImplemented
+	return t.renderTo(ctx, w, data)
 }
 
 // RenderWithData is RenderTo plus initial @data values (runtimeOptions.data).
 func (t *Template) RenderWithData(w io.Writer, data any, dataVars map[string]any) error {
-	return errNotImplemented
+	return t.renderTo(nil, w, data) // Task 7 seeds @data from dataVars
+}
+
+func (t *Template) renderTo(ctx context.Context, w io.Writer, data any) error {
+	out := outWriter{w: w, buf: make([]byte, 0, flushSize)}
+	return t.render(ctx, &out, data)
 }
 
 // SafeString is written to output without HTML escaping.
@@ -141,17 +157,30 @@ type Helper func(opts *HelperOptions) (any, error)
 type HelperOptions struct {
 	Name string         // helper name as written in the template
 	Args []any          // evaluated positional args
-	Hash map[string]any // evaluated hash args
+	Hash map[string]any // evaluated hash args; nil when the call has none
+
+	s           *renderState
+	this        any      // JS `this`
+	fn, inverse *program // block programs; nil = none (container.noop)
 }
 
-func (o *HelperOptions) Ctx() any                       { return nil }
-func (o *HelperOptions) IsBlock() bool                  { return false }
-func (o *HelperOptions) Fn() (string, error)            { return "", errNotImplemented }
-func (o *HelperOptions) FnWith(ctx any) (string, error) { return "", errNotImplemented }
+// Ctx is the helper's `this`: the current context, or an empty object when
+// that is null/undefined (JS container.nullContext).
+func (o *HelperOptions) Ctx() any      { return o.this }
+func (o *HelperOptions) IsBlock() bool { return o.fn != nil || o.inverse != nil }
+
+// Fn renders the block with the helper's `this` (JS options.fn(this)).
+func (o *HelperOptions) Fn() (string, error) { return o.FnWith(o.this) }
+
+// FnWith renders the block with ctx (JS options.fn(ctx)).
+func (o *HelperOptions) FnWith(ctx any) (string, error) { return o.s.renderString(o.fn, ctx) }
+
 func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars map[string]any) error {
 	return errNotImplemented
 }
-func (o *HelperOptions) Inverse() (string, error)             { return "", errNotImplemented }
+
+// Inverse renders the {{else}} block with the helper's `this`.
+func (o *HelperOptions) Inverse() (string, error)             { return o.s.renderString(o.inverse, o.this) }
 func (o *HelperOptions) InverseTo(w io.Writer, ctx any) error { return errNotImplemented }
 func (o *HelperOptions) DataVar(name string) any              { return nil }
 func (o *HelperOptions) Lookup(path string) any               { return nil }
