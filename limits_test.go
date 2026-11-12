@@ -367,3 +367,34 @@ func TestIndentBomb(t *testing.T) {
 		}
 	}
 }
+
+// Work a statement does in proportion to its own size costs ops, so a big
+// statement in a loop or a fan-out partial can't multiply it for free:
+// arguments, hash pairs, path segments (cyclic data never ends a path)
+// and comments.
+func TestStatementSizeOps(t *testing.T) {
+	cyc := map[string]any{}
+	cyc["a"] = cyc
+	for _, src := range []string{
+		"{{lookup a" + strings.Repeat(" a", 1000) + "}}",
+		"{{lookup a" + strings.Repeat(" k=a", 1000) + "}}",
+		"{{> p" + strings.Repeat(" k=a", 1000) + "}}",
+		"{{a" + strings.Repeat(".a", 1000) + "}}",
+		strings.Repeat("{{!}}", 1000),
+	} {
+		for _, strict := range []bool{false, true} {
+			tpl, err := ParseWithOptions(src, Options{Strict: strict, Limits: Limits{MaxOps: 500}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tpl.RegisterPartial("p", ""); err != nil {
+				t.Fatal(err)
+			}
+			_, err = tpl.Render(cyc)
+			var le *LimitError
+			if !errors.As(err, &le) || le.What != "ops" {
+				t.Errorf("%.20s... (strict %v): err = %v, want ops LimitError", src, strict, err)
+			}
+		}
+	}
+}

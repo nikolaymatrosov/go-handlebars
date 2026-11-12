@@ -189,8 +189,11 @@ func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVar
 	return out.flush()
 }
 
-// step counts one op (substitution, helper call or loop iteration) and,
-// every 1024 ops, checks the RenderCtx context.
+// step counts one op and, every 1024 ops, checks the RenderCtx context.
+// Ops are substitutions, helper calls and loop iterations, plus whatever a
+// statement does in proportion to its size or its data (arguments, path
+// segments, comments, partial expansions, decorators, copied keys), so
+// the work per op is bounded.
 func (s *renderState) step() error {
 	s.ops++
 	if s.ops > s.limits.MaxOps {
@@ -323,6 +326,7 @@ func (s *renderState) body(nodes []node, ctx any) error {
 		case *contentNode:
 			err = s.out.writeString(n.value)
 		case *commentNode:
+			err = s.step()
 		case *mustacheNode:
 			if n.decorator {
 				continue // run when the program is wrapped
@@ -382,6 +386,9 @@ func errAt(n node, msg string) error {
 // Under StringParams (compiler.js pushParam) a path is its string form and
 // undefined/null are "".
 func (s *renderState) param(n node, ctx any) (any, error) {
+	if err := s.step(); err != nil {
+		return nil, err
+	}
 	switch n := n.(type) {
 	case *pathExpr:
 		if s.opts.StringParams {
@@ -411,6 +418,11 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 // site reports a strict use site (JS path.strict): the callee of a mustache,
 // block or helper call, whose last part must exist in strict mode.
 func (s *renderState) lookup(p *pathExpr, ctx any, site bool) (any, error) {
+	for range len(p.parts) - 1 { // each further segment is a property read
+		if err := s.step(); err != nil {
+			return nil, err
+		}
+	}
 	if s.opts.Strict || s.opts.AssumeObjects {
 		return s.lookupStrict(p, ctx, s.opts.Strict && site)
 	}
