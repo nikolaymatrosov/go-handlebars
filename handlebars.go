@@ -47,7 +47,10 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("%s (line %d, column %d)", e.Message, e.Line, e.Column)
+	if e.Line > 0 { // mirrors the handlebars.js Exception: "msg - line:col"
+		return fmt.Sprintf("%s - %d:%d", e.Message, e.Line, e.Column)
+	}
+	return e.Message
 }
 
 // Options mirrors handlebars.js compile options plus Limits.

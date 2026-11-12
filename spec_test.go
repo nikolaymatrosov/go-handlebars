@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -213,6 +214,8 @@ func resolveWalk(v any, skip *errSkip) any {
 
 var stubsPrinted = map[string]bool{}
 
+// NOTE: stdout of passing packages is hidden by `go test` without -v, so
+// HBSPEC_STUBS=1 needs -v to be visible.
 // printStubs emits paste-ready specFuncs entries (HBSPEC_STUBS=1), each
 // followed by the full JS as comments, once per hash per run.
 func printStubs(err error) {
@@ -375,12 +378,29 @@ func failOrSkip(err error) (specStatus, string) {
 	return specFail, err.Error()
 }
 
-// expectErr judges an error from parsing/rendering: pass iff exception: true.
+// expectErr judges an error from parsing/rendering against tc.Exception.
 func expectErr(tc specTest, err error) (specStatus, string) {
-	if tc.expectsError() {
+	if !tc.expectsError() {
+		return specFail, err.Error()
+	}
+	return matchException(tc.Exception, err)
+}
+
+// matchException mirrors handlebars.js shouldThrow: true matches any error,
+// "/re/" is a regexp over the message, any other string must equal it.
+func matchException(want any, err error) (specStatus, string) {
+	s, ok := want.(string)
+	if !ok {
 		return specPass, ""
 	}
-	return specFail, err.Error()
+	if len(s) >= 2 && s[0] == '/' && s[len(s)-1] == '/' {
+		if m, rerr := regexp.MatchString(s[1:len(s)-1], err.Error()); rerr != nil || !m {
+			return specFail, fmt.Sprintf("error %q does not match %s (%v)", err.Error(), s, rerr)
+		}
+	} else if err.Error() != s {
+		return specFail, fmt.Sprintf("error %q, want %q", err.Error(), s)
+	}
+	return specPass, ""
 }
 
 func specFiles(t *testing.T, kind func(name string) bool) []string {
@@ -472,7 +492,7 @@ func TestSpecParser(t *testing.T) {
 				if err == nil {
 					return specFail, "expected a parse error"
 				}
-				return specPass, ""
+				return matchException(tests[i].Exception, err)
 			}
 			if err != nil {
 				return specFail, err.Error()
@@ -495,8 +515,7 @@ func TestSpecRender(t *testing.T) {
 	}
 }
 
-// expectsError: exception is true, or a string describing the error
-// (corpus has both); only the presence of an error is checked.
+// expectsError: exception is true, or a string/regex of the expected error.
 func (tc specTest) expectsError() bool {
 	return tc.Exception != nil && tc.Exception != false
 }
