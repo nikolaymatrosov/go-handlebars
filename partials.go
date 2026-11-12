@@ -360,8 +360,6 @@ func (t *Template) registerDecorator(name string, d decorator) {
 // (a template wraps before pushing its context); decorator params see
 // their innermost entry (JS depth0: undefined for a template's own
 // decorators). p is returned as is when it has none.
-// ponytail: JS wraps an ambiguous block ({{#foo}} without a helper foo)
-// twice, running its decorators twice; this wraps once.
 func (s *renderState) wrap(p *program) (*program, error) {
 	if !p.decorated() {
 		return p, nil

@@ -335,8 +335,11 @@ func (s *renderState) body(nodes []node, ctx any) error {
 // wrapBlock wraps a block statement's programs (JS options.fn/inverse =
 // container.program(...)), running their decorators before the helper
 // sees them.
-// ponytail: JS evaluates the callee and params before the wrap; only which
-// error is reported first can differ.
+// ponytail: JS wraps after evaluating the callee and params, so user code
+// there (param/subexpression helpers, data lambdas, helperMissing) runs
+// after the decorators instead of before, and decorators still run (and
+// cost ops) when the callee or params throw. Only inline-name
+// subexpressions can observe it today; wrap inside expr/invokeHelper if needed.
 func (s *renderState) wrapBlock(n *blockNode) (fn, inverse *program, err error) {
 	if fn, err = s.wrap(n.program); err == nil {
 		inverse, err = s.wrap(n.inverse)
