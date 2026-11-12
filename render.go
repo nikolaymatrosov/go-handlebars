@@ -212,7 +212,7 @@ func (s *renderState) renderProgramBP(p *program, ctx any, blockParams []any) er
 	if len(outer) > 0 {
 		top = outer[len(outer)-1]
 	}
-	push := !sameContext(ctx, top) && !(ctx == any(nullCtx{}) && isNull(top))
+	push := !sameContext(ctx, top) && !(ctx == any(nullCtx{}) && len(outer) > 0 && isNull(top))
 	if push {
 		s.depths = append(s.depths, ctx)
 	}
