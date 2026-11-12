@@ -124,22 +124,25 @@ func (t *Template) RegisterPartialTemplate(name string, p *Template) {}
 
 func (t *Template) Render(data any) (string, error) {
 	out := outWriter{buf: make([]byte, 0, t.bufHint)}
-	if err := t.render(nil, &out, data); err != nil {
+	if err := t.render(context.Background(), &out, data); err != nil {
 		return "", err
 	}
 	return string(out.buf), nil
 }
 
-func (t *Template) RenderTo(w io.Writer, data any) error { return t.renderTo(nil, w, data) }
+func (t *Template) RenderTo(w io.Writer, data any) error { return t.renderTo(context.Background(), w, data) }
 
 // RenderCtx checks ctx.Err() every 1024 ops; rendering is otherwise identical.
 func (t *Template) RenderCtx(ctx context.Context, w io.Writer, data any) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return t.renderTo(ctx, w, data)
 }
 
 // RenderWithData is RenderTo plus initial @data values (runtimeOptions.data).
 func (t *Template) RenderWithData(w io.Writer, data any, dataVars map[string]any) error {
-	return t.renderTo(nil, w, data) // Task 7 seeds @data from dataVars
+	return t.renderTo(context.Background(), w, data) // Task 7 seeds @data from dataVars
 }
 
 func (t *Template) renderTo(ctx context.Context, w io.Writer, data any) error {

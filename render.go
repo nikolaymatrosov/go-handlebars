@@ -75,16 +75,15 @@ type renderState struct {
 	// emitted is the output byte count every outWriter of this render shares.
 	emitted int
 	limits  Limits
-	ctx     context.Context // nil outside RenderCtx
+	ctx     context.Context // never nil
+	done    <-chan struct{} // ctx.Done(); nil when ctx can't be cancelled
 }
 
 func (t *Template) render(ctx context.Context, out *outWriter, data any) error {
-	s := &renderState{t: t, out: out, limits: t.opts.Limits.withDefaults(), ctx: ctx}
+	s := &renderState{t: t, out: out, limits: t.opts.Limits.withDefaults(), ctx: ctx, done: ctx.Done()}
 	out.emitted, out.max = &s.emitted, s.limits.MaxOutputSize
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	s.depths = append(make([]any, 0, 8), data)
 	if err := s.body(t.prog.body, data); err != nil {
@@ -100,7 +99,7 @@ func (s *renderState) step() error {
 	if s.ops > s.limits.MaxOps {
 		return &LimitError{What: "ops", Max: s.limits.MaxOps}
 	}
-	if s.ctx != nil && s.ops%1024 == 0 {
+	if s.done != nil && s.ops%1024 == 0 {
 		return s.ctx.Err()
 	}
 	return nil
