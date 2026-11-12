@@ -111,6 +111,7 @@ func lex(src string, limits Limits) ([]token, error) {
 	}
 
 	var (
+		memo  scanMemo
 		toks  []token
 		stack []lexState
 		pos   int
@@ -243,7 +244,7 @@ func lex(src string, limits Limits) ([]token, error) {
 				return fail(pos)
 			}
 		case stMu:
-			k, text, end := lexMu(src, pos)
+			k, text, end := lexMu(src, pos, &memo)
 			switch k {
 			case muSkip:
 			case muComment: // "{{!--": hand off to the comment state without consuming
@@ -272,7 +273,20 @@ const (
 
 // lexMu matches one token in the mu state at src[pos:] (first matching rule
 // wins, in handlebars.l order). It returns the kind, token text and end offset.
-func lexMu(src string, pos int) (k tokenKind, text string, end int) {
+// scanMemo records forward scans that already failed. A failed search for a
+// terminator fails for every later start too, so remembering it keeps the
+// lexer linear on unterminated input (each failure otherwise rescans the
+// remainder once per retry).
+type scanMemo struct {
+	noBang    bool // no "}}" after some "{{!"
+	noDQ      bool // no closing '"'
+	noSQ      bool // no closing "'"
+	noBracket bool // no closing ']'
+	// starts before these offsets lie in a digit/ID run whose rule already failed
+	numFailEnd, idFailEnd int
+}
+
+func lexMu(src string, pos int, m *scanMemo) (k tokenKind, text string, end int) {
 	tok := func(k tokenKind, end int) (tokenKind, string, int) { return k, src[pos:end], end }
 	has := func(i int, p string) bool { return strings.HasPrefix(src[i:], p) }
 	c := src[pos]
@@ -335,8 +349,11 @@ func lexMu(src string, pos int) (k tokenKind, text string, end int) {
 		case has(p, "!--"):
 			return muComment, "", pos
 		case has(p, "!"):
-			if i := strings.Index(src[p+1:], "}}"); i >= 0 {
-				return tok(tCOMMENT, p+1+i+2)
+			if !m.noBang {
+				if i := strings.Index(src[p+1:], "}}"); i >= 0 {
+					return tok(tCOMMENT, p+1+i+2)
+				}
+				m.noBang = true
 			}
 		}
 		if has(p, "*") {
@@ -360,12 +377,19 @@ func lexMu(src string, pos int) (k tokenKind, text string, end int) {
 	case '/':
 		return tok(tSEP, pos+1)
 	case '"', '\'':
-		if e := scanQuoted(src, pos, c); e >= 0 {
-			s := src[pos+1 : e-1]
-			if strings.Contains(s, `\`+string(c)) {
-				s = strings.ReplaceAll(s, `\`+string(c), string(c))
+		no := &m.noDQ
+		if c == '\'' {
+			no = &m.noSQ
+		}
+		if !*no {
+			if e := scanQuoted(src, pos, c); e >= 0 {
+				s := src[pos+1 : e-1]
+				if strings.Contains(s, `\`+string(c)) {
+					s = strings.ReplaceAll(s, `\`+string(c), string(c))
+				}
+				return tSTRING, s, e
 			}
-			return tSTRING, s, e
+			*no = true
 		}
 	case '@':
 		return tok(tDATA, pos+1)
@@ -401,7 +425,7 @@ func lexMu(src string, pos int) (k tokenKind, text string, end int) {
 			return tok(l.k, pos+len(l.w))
 		}
 	}
-	if c == '-' || (c >= '0' && c <= '9') { // NUMBER
+	if (c == '-' || (c >= '0' && c <= '9')) && pos >= m.numFailEnd { // NUMBER
 		i := pos
 		if c == '-' {
 			i++
@@ -423,6 +447,7 @@ func lexMu(src string, pos int) (k tokenKind, text string, end int) {
 			if lookaheadSp(src, i) {
 				return tok(tNUMBER, i)
 			}
+			m.numFailEnd = i
 		}
 	}
 	if has(pos, "as") {
@@ -431,18 +456,21 @@ func lexMu(src string, pos int) (k tokenKind, text string, end int) {
 		}
 	}
 	// ID: run of id chars followed by a LOOKAHEAD char
-	i := pos
-	for i < len(src) {
-		r, w := utf8.DecodeRuneInString(src[i:])
-		if !idRune(r) {
-			break
+	if pos >= m.idFailEnd {
+		i := pos
+		for i < len(src) {
+			r, w := utf8.DecodeRuneInString(src[i:])
+			if !idRune(r) {
+				break
+			}
+			i += w
 		}
-		i += w
+		if i > pos && lookahead(src, i, laID, true) {
+			return tok(tID, i)
+		}
+		m.idFailEnd = i
 	}
-	if i > pos && lookahead(src, i, laID, true) {
-		return tok(tID, i)
-	}
-	if c == '[' { // [segment] ID with \\ and \] escapes
+	if c == '[' && !m.noBracket { // [segment] ID with \\ and \] escapes
 		if e := scanQuoted(src, pos, ']'); e >= 0 {
 			s := src[pos:e]
 			if strings.IndexByte(s, '\\') >= 0 {
@@ -457,6 +485,7 @@ func lexMu(src string, pos int) (k tokenKind, text string, end int) {
 			}
 			return tID, s, e
 		}
+		m.noBracket = true
 	}
 	_, w := utf8.DecodeRuneInString(src[pos:])
 	return tok(tINVALID, pos+w)

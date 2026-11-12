@@ -1,6 +1,10 @@
 package handlebars
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func init() {
 	specTokenize = func(src string) ([]specToken, error) {
@@ -46,5 +50,33 @@ func TestLexLimitAndError(t *testing.T) {
 	}
 	if _, err := lex("{{!-- x", Limits{}); err == nil {
 		t.Error("want lexical error for unterminated comment")
+	}
+}
+
+// Unterminated scans must stay linear: each case sits near MaxTemplateSize and
+// would take minutes if a failed forward search were retried per offset.
+func TestLexLinearOnUnterminated(t *testing.T) {
+	n := DefaultLimits.MaxTemplateSize
+	cases := map[string]string{
+		"bracket":     "{{" + strings.Repeat("[", n-2),
+		"bang":        strings.Repeat("{{!", n/3),
+		"dquote":      "{{" + strings.Repeat(`"`, n-2),
+		"squote":      "{{" + strings.Repeat(`'`, n-2),
+		"escdquote":   "{{" + strings.Repeat(`\"`, (n-2)/2),
+		"id run":      "{{" + strings.Repeat("a", n-3) + "(",
+		"digit run":   "{{" + strings.Repeat("1", n-3) + "(",
+		"fraction":    "{{1." + strings.Repeat("1", n-5) + "(",
+		"inverse ws":  "{{^" + strings.Repeat(" ", n-3),
+		"comment end": "{{!--" + strings.Repeat("-", n-5),
+		"raw":         "{{{{a}}}}" + strings.Repeat("{{{{/", (n-9)/5),
+	}
+	for name, src := range cases {
+		start := time.Now()
+		lex(src, Limits{}) // result irrelevant; only the runtime matters
+		d := time.Since(start)
+		t.Logf("%s: %v", name, d)
+		if d > time.Second {
+			t.Errorf("%s: %v, want linear", name, d)
+		}
 	}
 }
