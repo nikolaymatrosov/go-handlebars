@@ -35,7 +35,7 @@ type specTest struct {
 // specGate is the minimum pass count per file. Each task raises the gates
 // of the files it fixes; lowering a gate is forbidden. 0 = report only.
 var specGate = map[string]int{
-	"tokenizer.json":          0,
+	"tokenizer.json":          78,
 	"parser.json":             0,
 	"basic.json":              0,
 	"blocks.json":             0,

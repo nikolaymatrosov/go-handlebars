@@ -30,6 +30,27 @@ var DefaultLimits = Limits{
 	MaxOps:          1_000_000,
 }
 
+// withDefaults replaces zero fields with the corresponding DefaultLimits field.
+func (l Limits) withDefaults() Limits {
+	d := DefaultLimits
+	if l.MaxTemplateSize == 0 {
+		l.MaxTemplateSize = d.MaxTemplateSize
+	}
+	if l.MaxParseDepth == 0 {
+		l.MaxParseDepth = d.MaxParseDepth
+	}
+	if l.MaxRenderDepth == 0 {
+		l.MaxRenderDepth = d.MaxRenderDepth
+	}
+	if l.MaxOutputSize == 0 {
+		l.MaxOutputSize = d.MaxOutputSize
+	}
+	if l.MaxOps == 0 {
+		l.MaxOps = d.MaxOps
+	}
+	return l
+}
+
 // LimitError reports which limit was exceeded.
 type LimitError struct {
 	What string // "template size", "parse depth", "render depth", "output size", "ops"
