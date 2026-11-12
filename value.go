@@ -11,8 +11,9 @@ import (
 // (the spec harness uses float64), arrays are slices/arrays, objects are
 // KeyedCollection, string-keyed maps and structs.
 
-// maxValueDepth bounds pointer chasing and nested-array formatting, so
-// self-referential Go values cannot hang or overflow the stack.
+// maxValueDepth bounds pointer chasing and nested-array recursion depth
+// (stack use). Fan-out (shared or cyclic arrays) is bounded separately by
+// appendValue's output limit.
 const maxValueDepth = 64
 
 // nullCtx is JS container.nullContext: the `this` of a helper called while
@@ -109,6 +110,9 @@ func lookupProperty(parent any, name string) (any, bool) {
 	case nil:
 		return nil, false
 	case KeyedCollection:
+		if isNull(p) { // typed nil, e.g. (*T)(nil): Get would deref a nil receiver
+			return nil, false
+		}
 		return p.Get(name)
 	case map[string]any:
 		v, ok := p[name]
@@ -207,7 +211,10 @@ func utf16Len(s string) int {
 // appends nothing (handlebars `append`/escapeExpression treat null as "").
 // The caller handles a top-level SafeString; nested ones are plain strings,
 // as in JS where Array#join stringifies them before escaping.
-func appendValue(dst []byte, v any, escape bool) []byte {
+// Array formatting stops once len(dst) > limit (the caller's remaining
+// output budget), so a shared or self-referential array costs at most
+// O(limit × maxValueDepth) work; the caller then reports the overflow.
+func appendValue(dst []byte, v any, escape bool, limit int) []byte {
 	switch x := v.(type) {
 	case nil:
 		return dst
@@ -223,10 +230,13 @@ func appendValue(dst []byte, v any, escape bool) []byte {
 	case bool:
 		return strconv.AppendBool(dst, x)
 	}
-	return appendReflect(dst, reflect.ValueOf(v), escape, 0)
+	return appendReflect(dst, reflect.ValueOf(v), escape, limit, 0)
 }
 
-func appendReflect(dst []byte, rv reflect.Value, escape bool, depth int) []byte {
+func appendReflect(dst []byte, rv reflect.Value, escape bool, limit, depth int) []byte {
+	if len(dst) > limit {
+		return dst
+	}
 	switch rv.Kind() {
 	case reflect.String:
 		if escape {
@@ -245,16 +255,16 @@ func appendReflect(dst []byte, rv reflect.Value, escape bool, depth int) []byte 
 		if rv.IsNil() || depth == maxValueDepth {
 			return dst
 		}
-		return appendReflect(dst, rv.Elem(), escape, depth+1)
+		return appendReflect(dst, rv.Elem(), escape, limit, depth+1)
 	case reflect.Slice, reflect.Array: // Array#toString: join(",")
 		if depth == maxValueDepth {
 			return dst
 		}
-		for i := 0; i < rv.Len(); i++ {
+		for i := 0; i < rv.Len() && len(dst) <= limit; i++ {
 			if i > 0 {
 				dst = append(dst, ',')
 			}
-			dst = appendReflect(dst, rv.Index(i), escape, depth+1)
+			dst = appendReflect(dst, rv.Index(i), escape, limit, depth+1)
 		}
 		return dst
 	case reflect.Map:

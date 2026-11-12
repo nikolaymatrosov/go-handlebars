@@ -73,6 +73,9 @@ func TestRenderLookupGoValues(t *testing.T) {
 		{"{{a.b}}|{{a.missing}}|{{n}}|{{n.[1]}}", map[string]any{"a": map[string]any{"b": "x"}, "n": map[int]string{1: "no"}}, "x||[object Object]|"},
 		{"{{0}}{{1}}|{{length}}", []any{"x", true}, "xtrue|2"},
 		{"[{{Name}}]", (*inner)(nil), "[]"},
+		// typed-nil KeyedCollection: Get must not run on a nil receiver
+		{"[{{meta.title}}{{#meta}}x{{/meta}}]", map[string]any{"meta": (*omap)(nil)}, "[]"},
+		{"[{{title}}]", (*omap)(nil), "[]"},
 	}
 	for _, c := range cases {
 		if got := mustRender(t, Options{}, c.src, c.data); got != c.want {
@@ -90,8 +93,17 @@ func TestRenderLimits(t *testing.T) {
 		{Limits{MaxOutputSize: 5}, "{{s}}{{s}}", "output size"},
 		{Limits{MaxOps: 3}, "{{s}}{{s}}{{s}}{{s}}", "ops"},
 		{Limits{MaxRenderDepth: 3}, strings.Repeat("{{#t}}", 4) + strings.Repeat("{{/t}}", 4), "render depth"},
+		// array stringification is budget-bounded: 2^64 (cycle) / 2^24 (DAG) joins
+		{Limits{MaxOutputSize: 100}, "{{cycle}}", "output size"},
+		{Limits{MaxOutputSize: 100}, "{{{dag}}}", "output size"},
 	}
-	data := map[string]any{"s": "abc", "t": true}
+	cycle := []any{nil, nil}
+	cycle[0], cycle[1] = cycle, cycle
+	dag := []any{"x"}
+	for i := 0; i < 24; i++ {
+		dag = []any{dag, dag}
+	}
+	data := map[string]any{"s": "abc", "t": true, "cycle": cycle, "dag": dag}
 	for _, c := range cases {
 		tpl, err := ParseWithOptions(c.src, Options{Limits: c.limits})
 		if err != nil {

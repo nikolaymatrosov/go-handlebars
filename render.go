@@ -51,7 +51,7 @@ func (o *outWriter) writeValue(v any, escape bool) error {
 	if s, ok := v.(SafeString); ok {
 		o.buf = append(o.buf, s...)
 	} else {
-		o.buf = appendValue(o.buf, v, escape)
+		o.buf = appendValue(o.buf, v, escape, mark+o.max-*o.emitted)
 	}
 	return o.commit(mark)
 }

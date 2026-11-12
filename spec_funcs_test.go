@@ -1,6 +1,9 @@
 package handlebars
 
-import "strconv"
+import (
+	"math"
+	"strconv"
+)
 
 // specFuncs maps sha1(JS source)[:12] to the Go Helper (or plain value)
 // replacing that JS code object in the spec corpus. A nil value counts as
@@ -41,4 +44,4 @@ func arg(o *HelperOptions, i int) any {
 }
 
 // jsStr is JS String(v) for string concatenation in ported helpers.
-func jsStr(v any) string { return string(appendValue(nil, v, false)) }
+func jsStr(v any) string { return string(appendValue(nil, v, false, math.MaxInt)) }
