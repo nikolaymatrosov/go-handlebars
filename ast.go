@@ -49,6 +49,10 @@ type call struct {
 	path   node // *pathExpr or a literal
 	params []node
 	hash   []hashPair // nil when absent
+	// Set by the parser (parser.classify) on mustaches, blocks and
+	// subexpressions: callee is path after transformLiteralToPath.
+	callee *pathExpr
+	kind   callKind
 }
 
 type hashPair struct {

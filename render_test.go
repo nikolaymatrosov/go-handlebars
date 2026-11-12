@@ -136,6 +136,7 @@ func TestRenderBlockParams(t *testing.T) {
 		{"{{#bp as |a|}}{{#bp as |a|}}{{a}}{{/bp}}{{/bp}}", "A"},
 		{"{{#bp as |a|}}{{/bp}}{{a}}", "ctx"}, // out of scope
 		{"{{#bp as |a|}}{{this.a}}{{/bp}}", "ctx"},
+		{`{{#bp as |a|}}{{"a"}}{{/bp}}`, "A"}, // transformLiteralToPath, then a block param
 		{"{{#bp as |a b c|}}[{{c}}]{{/bp}}", "[]"},
 		// chained else: the wrapper inverse program is a frame; o is 2 levels out
 		// ('a' is declared on the sibling program, so it is a context lookup).
@@ -187,5 +188,78 @@ func TestRenderCompatDepthed(t *testing.T) {
 		"x": map[string]any{"y": "Y"}, "o": []any{map[string]any{"i": []any{1}}}})
 	if got != "Y|" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// TestHelperAPI covers HelperOptions and dispatch behavior the spec corpus
+// doesn't: writer entry points, recovery, sticky limits, compile errors.
+func TestHelperAPI(t *testing.T) {
+	echo := func(o *HelperOptions) (any, error) { return o.Name + ":" + jsStr(arg(o, 0)), nil }
+	helpers := map[string]Helper{
+		"bp": func(o *HelperOptions) (any, error) {
+			var sb strings.Builder
+			err := o.FnTo(&sb, o.Ctx(), []any{map[string]any{"fn": Helper(echo)}}, nil)
+			return SafeString(sb.String()), err
+		},
+		"inv": func(o *HelperOptions) (any, error) {
+			var sb strings.Builder
+			err := o.InverseTo(&sb, "X")
+			return sb.String(), err
+		},
+		"names":   func(o *HelperOptions) (any, error) { return strings.Join(o.BlockParamNames(), ","), nil },
+		"look":    func(o *HelperOptions) (any, error) { return o.Lookup("a.b"), nil },
+		"swallow": func(o *HelperOptions) (any, error) { o.Fn(); return "", nil }, // drops the LimitError
+		"spin": func(o *HelperOptions) (any, error) { // a helper looping over an empty block
+			for {
+				if _, err := o.Fn(); err != nil {
+					return nil, err
+				}
+			}
+		},
+		"boom":               func(o *HelperOptions) (any, error) { panic("boom") },
+		"blockHelperMissing": func(o *HelperOptions) (any, error) { return "hook", nil },
+	}
+	data := map[string]any{"a": map[string]any{"b": "B"}, "s": "abcdef"}
+	cases := []struct {
+		opts      Options
+		src, want string // want "!x": an error containing x
+	}{
+		{Options{}, "{{#bp as |b|}}{{b.fn 1}}{{/bp}}", "b.fn:1"}, // multi-part block param path is a helper call
+		{Options{}, "{{#inv}}x{{else}}{{this}}{{/inv}}", "X"},
+		{Options{}, "{{#names as |a b|}}{{/names}}|{{names}}", "a,b|"},
+		{Options{}, "{{look}}", "B"},
+		{Options{}, "{{#a}}{{/a}}", "hook"},
+		{Options{}, "{{blockHelperMissing 1}}", `!Missing helper: "blockHelperMissing"`}, // hooks aren't helpers
+		{Options{Limits: Limits{MaxOutputSize: 3}}, "{{#swallow}}{{s}}{{/swallow}}", "!output size"},
+		{Options{Limits: Limits{MaxOps: 1}}, "{{#swallow}}{{s}}{{/swallow}}", "!ops"}, // no later step to trip
+		{Options{Limits: Limits{MaxOps: 100}}, "{{#spin}}{{/spin}}", "!ops"},
+		{Options{}, "{{boom}}", `!helper "boom" panicked: boom`},
+		{Options{}, "{{#bp as |b|}}{{#look}}{{/look}}{{boom}}{{/bp}}", "!panicked"},
+	}
+	for _, c := range cases {
+		tpl, err := ParseWithOptions(c.src, c.opts)
+		if err != nil {
+			t.Fatal(c.src, err)
+		}
+		for name, h := range helpers {
+			tpl.RegisterHelper(name, h)
+		}
+		got, err := tpl.Render(data)
+		if err != nil {
+			got = "!" + err.Error()
+		}
+		if got != c.want && !(c.want[0] == '!' && strings.Contains(got, c.want[1:])) {
+			t.Errorf("%s = %q, want %q", c.src, got, c.want)
+		}
+	}
+
+	// knownHelpersOnly rejects unknown helpers at compile time, even in
+	// branches that never run; a parse error still wins (JS parses first).
+	ko := Options{KnownHelpersOnly: true}
+	if _, err := ParseWithOptions("{{#if false}}{{foo 1}}{{/if}}", ko); err == nil || err.Error() != "You specified knownHelpersOnly, but used the unknown helper foo - 1:13" {
+		t.Errorf("knownHelpersOnly: %v", err)
+	}
+	if _, err := ParseWithOptions("{{foo 1}}{{", ko); err == nil || !strings.HasPrefix(err.Error(), "Parse error") {
+		t.Errorf("knownHelpersOnly + parse error: %v", err)
 	}
 }

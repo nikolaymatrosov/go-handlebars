@@ -155,42 +155,6 @@ func (t *Template) renderTo(ctx context.Context, w io.Writer, data any) error {
 // SafeString is written to output without HTML escaping.
 type SafeString string
 
-// Helper implements a handlebars helper.
-type Helper func(opts *HelperOptions) (any, error)
-
-// HelperOptions carries evaluated arguments and block closures.
-type HelperOptions struct {
-	Name string         // helper name as written in the template
-	Args []any          // evaluated positional args
-	Hash map[string]any // evaluated hash args; nil when the call has none
-
-	s           *renderState
-	this        any      // JS `this`
-	fn, inverse *program // block programs; nil = none (container.noop)
-}
-
-// Ctx is the helper's `this`: the current context, or an empty object when
-// that is null/undefined (JS container.nullContext).
-func (o *HelperOptions) Ctx() any      { return o.this }
-func (o *HelperOptions) IsBlock() bool { return o.fn != nil || o.inverse != nil }
-
-// Fn renders the block with the helper's `this` (JS options.fn(this)).
-func (o *HelperOptions) Fn() (string, error) { return o.FnWith(o.this) }
-
-// FnWith renders the block with ctx (JS options.fn(ctx)).
-func (o *HelperOptions) FnWith(ctx any) (string, error) { return o.s.renderString(o.fn, ctx) }
-
-func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars map[string]any) error {
-	return errNotImplemented
-}
-
-// Inverse renders the {{else}} block with the helper's `this`.
-func (o *HelperOptions) Inverse() (string, error)             { return o.s.renderString(o.inverse, o.this) }
-func (o *HelperOptions) InverseTo(w io.Writer, ctx any) error { return errNotImplemented }
-func (o *HelperOptions) DataVar(name string) any              { return nil }
-func (o *HelperOptions) Lookup(path string) any               { return nil }
-func (o *HelperOptions) BlockParamNames() []string            { return nil }
-
 // KeyedCollection lets callers supply insertion-ordered objects (used by
 // {{#each}} and property lookup). The spec harness relies on it.
 type KeyedCollection interface {

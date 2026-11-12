@@ -41,7 +41,7 @@ var specGate = map[string]int{
 	"blocks.json":             23,
 	"builtins.json":           0,
 	"data.json":               0,
-	"helpers.json":            0,
+	"helpers.json":            75,
 	"partials.json":           0,
 	"regressions.json":        0,
 	"strict.json":             0,
@@ -310,6 +310,7 @@ func decodeResolved(raw []byte) (any, error) {
 }
 
 func runRender(tc specTest) (specStatus, string) {
+	jsGlobalValue = nil // JS globals set by ported helpers start undefined per test
 	data, err := decodeResolved(tc.Data)
 	if err != nil {
 		return failOrSkip(err)

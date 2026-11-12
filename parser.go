@@ -19,7 +19,7 @@ func parse(src string, opts Options) (*program, error) {
 	if lexErr != nil {
 		toks = append(toks, token{kind: tEOF, off: len(src)}) // stands for the bad text
 	}
-	p := &parser{src: src, toks: toks, maxDepth: limits.MaxParseDepth}
+	p := &parser{src: src, toks: toks, maxDepth: limits.MaxParseDepth, opts: &opts}
 	prog, err := p.program(setOf(tEOF), nil)
 	if lexErr != nil {
 		// JS lexes lazily and every JS error needs a lookahead token, so only
@@ -31,6 +31,9 @@ func parse(src string, opts Options) (*program, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.compileErr != nil {
+		return nil, p.compileErr
+	}
 	(&wsControl{standalone: !opts.IgnoreStandalone}).program(prog)
 	return prog, nil
 }
@@ -41,6 +44,8 @@ type parser struct {
 	i               int
 	depth, maxDepth int
 	bps             [][]string // blockParams of the enclosing programs, innermost last
+	opts            *Options
+	compileErr      error // first compile-time (compiler.js) error, reported after a clean parse
 }
 
 // tokSet is a bitset of token kinds.
@@ -254,13 +259,17 @@ func (p *parser) mustache() (node, error) {
 	} else if len(open.text) > 2 {
 		flag = open.text[2]
 	}
-	return &mustacheNode{
+	n := &mustacheNode{
 		loc:       at(open),
 		call:      c,
 		escaped:   flag != '{' && flag != '&',
 		decorator: strings.Contains(open.text, "*"),
 		strip:     strip(open.text, close.text),
-	}, nil
+	}
+	if !n.decorator {
+		p.classify(n, &n.call, false)
+	}
+	return n, nil
 }
 
 // call parses `helperName param* hash?` (partialName allows a subexpression)
@@ -324,7 +333,9 @@ func (p *parser) sexpr() (node, error) {
 	}
 	p.next()
 	p.depth--
-	return &subExpr{loc: at(open), call: c}, nil
+	n := &subExpr{loc: at(open), call: c}
+	p.classify(n, &n.call, true)
+	return n, nil
 }
 
 // helperName parses a path, data path or literal; expected is reported on error.
@@ -516,7 +527,7 @@ func (p *parser) block() (node, error) {
 		return nil, err
 	}
 	p.depth--
-	return prepareBlock(open, prog, inv, closeStrip, inverted)
+	return p.prepareBlock(open, prog, inv, closeStrip, inverted)
 }
 
 // closeBlock parses {{/name}} and checks it against the opening name.
@@ -575,7 +586,7 @@ func (p *parser) inverseChain() (*inverseInfo, error) {
 	if next != nil {
 		closeStrip = next.strip
 	}
-	b, err := prepareBlock(open, prog, next, closeStrip, false)
+	b, err := p.prepareBlock(open, prog, next, closeStrip, false)
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +595,7 @@ func (p *parser) inverseChain() (*inverseInfo, error) {
 }
 
 // prepareBlock ports helpers.js prepareBlock (validateClose is done by the caller).
-func prepareBlock(open openTag, prog *program, inv *inverseInfo, closeStrip stripFlags, inverted bool) (*blockNode, error) {
+func (p *parser) prepareBlock(open openTag, prog *program, inv *inverseInfo, closeStrip stripFlags, inverted bool) (*blockNode, error) {
 	b := &blockNode{
 		loc:        at(open.tok),
 		call:       open.call,
@@ -606,6 +617,9 @@ func prepareBlock(open openTag, prog *program, inv *inverseInfo, closeStrip stri
 	b.program = prog
 	if inverted {
 		b.program, b.inverse = b.inverse, b.program
+	}
+	if !b.decorator {
+		p.classify(b, &b.call, false)
 	}
 	return b, nil
 }
@@ -646,7 +660,9 @@ func (p *parser) rawBlock() (node, error) {
 		return nil, err
 	}
 	p.depth--
-	return &blockNode{loc: at(open), call: c, program: prog}, nil
+	n := &blockNode{loc: at(open), call: c, program: prog}
+	p.classify(n, &n.call, false)
+	return n, nil
 }
 
 // partial parses {{> name ...}} and {{#> name ...}}...{{/name}}.

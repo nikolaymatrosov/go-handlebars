@@ -1,8 +1,10 @@
 package handlebars
 
 import (
+	"errors"
 	"math"
 	"strconv"
+	"strings"
 )
 
 // specFuncs maps sha1(JS source)[:12] to the Go Helper (or plain value)
@@ -33,7 +35,223 @@ var specFuncs = map[string]any{
 	"d84b64c3871b": func(o *HelperOptions) (any, error) { return "bar" + jsStr(arg(o, 0)), nil },
 	"27589ee64ef5": func(o *HelperOptions) (any, error) { return "bar", nil },
 	"4529e62c8f31": func(o *HelperOptions) (any, error) { return arg(o, 0), nil }, // (arg) => arg
+
+	// helpers.json
+	"1547467c4929": func(o *HelperOptions) (any, error) { // function (prefix) {
+		return `<a href="` + jsStr(arg(o, 0)) + "/" + jsStr(o.Lookup("url")) + `">` + jsStr(o.Lookup("text")) + "</a>", nil
+	},
+	"2f3f9e3eb4a9": func(o *HelperOptions) (any, error) { return o.FnWith(nil) }, // function (options) {
+	"0df91e02a16b": func(o *HelperOptions) (any, error) { // function (a, b, c, options) {
+		s, err := o.FnWith(nil)
+		return s + jsStr(arg(o, 0)) + jsStr(arg(o, 1)) + jsStr(arg(o, 2)), err
+	},
+	"6d8e294dfae8": func(o *HelperOptions) (any, error) { // function (options) {
+		out := ""
+		for _, bye := range []string{"Goodbye", "goodbye", "GOODBYE"} {
+			s, err := o.Fn()
+			if err != nil {
+				return nil, err
+			}
+			out += bye + " " + s + "! "
+		}
+		return out, nil
+	},
+	"3db93e806b5d": func(o *HelperOptions) (any, error) { // function (options) {
+		out := ""
+		for _, bye := range []string{"Goodbye", "goodbye", "GOODBYE"} {
+			s, err := o.FnWith(map[string]any{})
+			if err != nil {
+				return nil, err
+			}
+			out += bye + " " + s + "! "
+		}
+		return out, nil
+	},
+	"3d74af472365": func(o *HelperOptions) (any, error) { // function (prefix, options) {
+		s, err := o.Fn()
+		return `<a href="` + jsStr(arg(o, 0)) + "/" + jsStr(o.Lookup("url")) + `">` + s + "</a>", err
+	},
+	"d745896a05f7": func(o *HelperOptions) (any, error) { return nil, nil }, // function () {}
+	"91dffbb1974f": func(o *HelperOptions) (any, error) { // function (options) { return options.fn({text: 'GOODBYE'}); }
+		return o.FnWith(map[string]any{"text": "GOODBYE"})
+	},
+	"77dd03499b04": func(o *HelperOptions) (any, error) { // function (options) { return '<form>' + options.fn(this) + '</form>'; }
+		s, err := o.Fn()
+		return "<form>" + s + "</form>", err
+	},
+	"0254e29c0979": func(o *HelperOptions) (any, error) { // function link(options) {
+		s, err := o.Fn()
+		return `<a href="/people/` + jsStr(o.Lookup("id")) + `">` + s + "</a>", err
+	},
+	"de0298484662": func(o *HelperOptions) (any, error) { // function (context, options) { return '<form>' + options.fn(context) + '</form>'; }
+		s, err := o.FnWith(arg(o, 0))
+		return "<form>" + s + "</form>", err
+	},
+	"74152a8e0c5d": func(o *HelperOptions) (any, error) { // function (options) { return '<a href="' + this.name + '">' + options.fn(this) + '</a>'; }
+		s, err := o.Fn()
+		return `<a href="` + jsStr(o.Lookup("name")) + `">` + s + "</a>", err
+	},
+	"66cc404fc016": func(o *HelperOptions) (any, error) { // function list(context, options) {
+		if context, _ := arg(o, 0).([]any); len(context) > 0 {
+			out := "<ul>"
+			for _, c := range context {
+				s, err := o.FnWith(c)
+				if err != nil {
+					return nil, err
+				}
+				out += "<li>" + s + "</li>"
+			}
+			return out + "</ul>", nil
+		}
+		s, err := o.Inverse()
+		return "<p>" + s + "</p>", err
+	},
+	"93fb762c2375": func(o *HelperOptions) (any, error) { return "winning", nil },   // function () {
+	"4d8f14da72db": func(o *HelperOptions) (any, error) { return "fail", nil },      // function () { return 'fail'; }
+	"47a2a32157eb": func(o *HelperOptions) (any, error) { return "world", nil },     // function () { return 'world'; }
+	"b78444d02e2f": func(o *HelperOptions) (any, error) { return "helpers", nil },   // function () { return 'helpers'; }
+	"655b5286d891": func(o *HelperOptions) (any, error) { return "helper", nil },    // function () { return 'helper'; }
+	"1169db7cd5e3": func(o *HelperOptions) (any, error) { return "found it!", nil }, // function () { return 'found it!'; }
+	"b0aa88072966": func(o *HelperOptions) (any, error) { return "world!", nil },    // function () { return 'world!'; }
+	"5e063064b61b": func(o *HelperOptions) (any, error) { // function (times, times2) {
+		times, times2 := arg(o, 0), arg(o, 1)
+		if jsTypeof(times) != "number" {
+			times = "NaN"
+		}
+		if jsTypeof(times2) != "number" {
+			times2 = "NaN"
+		}
+		return "Hello " + jsStr(times) + " " + jsStr(times2) + " times", nil
+	},
+	"242a92056ece": func(o *HelperOptions) (any, error) { // function (times) {
+		times := arg(o, 0)
+		if jsTypeof(times) != "number" {
+			times = "NaN"
+		}
+		return "Hello " + jsStr(times) + " times", nil
+	},
+	"0274afe23e83": func(o *HelperOptions) (any, error) { // function (param, times, bool1, bool2) {
+		times, bool1, bool2 := arg(o, 1), arg(o, 2), arg(o, 3)
+		if jsTypeof(times) != "number" {
+			times = "NaN"
+		}
+		if jsTypeof(bool1) != "boolean" {
+			bool1 = "NaB"
+		}
+		if jsTypeof(bool2) != "boolean" {
+			bool2 = "NaB"
+		}
+		return "Hello " + jsStr(arg(o, 0)) + " " + jsStr(times) + " times: " + jsStr(bool1) + " " + jsStr(bool2), nil
+	},
+	"00f663977c4d": func(o *HelperOptions) (any, error) { return "Hello " + jsStr(arg(o, 0)), nil }, // function (param) { return 'Hello ' + param; }
+	"346e103de23a": func(o *HelperOptions) (any, error) { // function (cruel, world) { return 'Goodbye ' + cruel + ' ' + world; }
+		return "Goodbye " + jsStr(arg(o, 0)) + " " + jsStr(arg(o, 1)), nil
+	},
+	"40addaef1c10": func(o *HelperOptions) (any, error) { // function (cruel, world, options) {
+		return o.FnWith(map[string]any{"greeting": "Goodbye", "adj": arg(o, 0), "noun": arg(o, 1)})
+	},
+	"da336151febc": func(o *HelperOptions) (any, error) { // function (options) {
+		return "GOODBYE " + jsStr(o.Hash["cruel"]) + " " + jsStr(o.Hash["world"]) + " " + jsStr(o.Hash["times"]) + " TIMES", nil
+	},
+	"cc4dcfc865d4": func(o *HelperOptions) (any, error) { // function goodbye(options) {
+		switch o.Hash["print"] {
+		case true:
+			return "GOODBYE " + jsStr(o.Hash["cruel"]) + " " + jsStr(o.Hash["world"]), nil
+		case false:
+			return "NOT PRINTING", nil
+		}
+		return "THIS SHOULD NOT HAPPEN", nil
+	},
+	"66bebb7e294a": func(o *HelperOptions) (any, error) { // function (options) {
+		s, err := o.Fn()
+		return "GOODBYE " + jsStr(o.Hash["cruel"]) + " " + s + " " + jsStr(o.Hash["times"]) + " TIMES", err
+	},
+	"e1ef1d2bb386": func(o *HelperOptions) (any, error) { // function goodbye(options) {
+		switch o.Hash["print"] {
+		case true:
+			s, err := o.Fn()
+			return "GOODBYE " + jsStr(o.Hash["cruel"]) + " " + s, err
+		case false:
+			return "NOT PRINTING", nil
+		}
+		return "THIS SHOULD NOT HAPPEN", nil
+	},
+	"89f0710c9760": func(o *HelperOptions) (any, error) { // function (mesg, options) {
+		if o.Name == "link_to" {
+			return SafeString("<a>" + jsStr(arg(o, 0)) + "</a>"), nil
+		}
+		return nil, nil
+	},
+	"9c74060d6d5a": func(o *HelperOptions) (any, error) { // function (options) {
+		if o.Name == "link_to" {
+			return SafeString("<a>winning</a>"), nil
+		}
+		return nil, nil
+	},
+	"1c7c5e685ba7": func(o *HelperOptions) (any, error) { return "foo", nil },               // function () {
+	"b3ffb642a1c8": func(o *HelperOptions) (any, error) { return jsTypeof(arg(o, 0)), nil }, // function (arg) { return typeof arg; }
+	"a45318f2a241": func(o *HelperOptions) (any, error) { return o.Lookup("bar"), nil },     // function () { return this.bar; }
+	"b1c3e3aaf024": func(o *HelperOptions) (any, error) { return true, nil },                // function () {
+	"8394317f1e5a": func(o *HelperOptions) (any, error) { // function () { return this.truthiness(); }
+		f, ok := o.Lookup("truthiness").(func(*HelperOptions) (any, error))
+		if !ok {
+			return nil, errors.New("TypeError: this.truthiness is not a function")
+		}
+		return f(o) // same `this`; o carries no args here
+	},
+	"81c9972a87a7": func(o *HelperOptions) (any, error) { return false, nil },                       // function () { return false; }
+	"2f8bfd3490c6": func(o *HelperOptions) (any, error) { return "missing: " + o.Name, nil },        // function () {
+	"52b8ca3163ef": func(o *HelperOptions) (any, error) { return "helper missing: " + o.Name, nil }, // function () {
+	"202bbf4e6630": func(o *HelperOptions) (any, error) { return "ran: " + o.Name, nil },            // function () {
+	"4950e7cfad7f": func(o *HelperOptions) (any, error) { return toUpperCase(o.Lookup("goodbye")) }, // function () {
+	"8ca05d61e43e": func(o *HelperOptions) (any, error) { // function (world) {
+		s, err := toUpperCase(arg(o, 0))
+		return "cruel " + s, err
+	},
+	"999d9735953e": func(o *HelperOptions) (any, error) { // function (options) {
+		u, err := toUpperCase(o.Lookup("goodbye"))
+		if err != nil {
+			return nil, err
+		}
+		s, err := o.Fn()
+		return u + s, err
+	},
+	"f6c577395672": func(o *HelperOptions) (any, error) { // function (options) {
+		if err := equalsBlockParams(o, 1); err != nil {
+			return nil, err
+		}
+		return fnBP(o, map[string]any{"value": "bar"}, []any{1.0, 2.0})
+	},
+	"b7d0e8a36c91": func(o *HelperOptions) (any, error) { // function (options) {
+		if err := equalsBlockParams(o, 1); err != nil {
+			return nil, err
+		}
+		return fnBP(o, map[string]any{}, []any{1.0, 2.0})
+	},
+	"784807fb6b10": func(o *HelperOptions) (any, error) { // function (options) {
+		if err := equalsBlockParams(o, 1); err != nil {
+			return nil, err
+		}
+		return fnBP(o, o.Ctx(), []any{1.0, 2.0})
+	},
+	"96c927a86ce3": func(o *HelperOptions) (any, error) { // function (options) {
+		if jsGlobalValue == nil {
+			jsGlobalValue = 1.0
+		}
+		var bps []any
+		if len(o.BlockParamNames()) == 1 {
+			v := jsGlobalValue.(float64)
+			jsGlobalValue = v + 2
+			bps = []any{v, v + 1}
+		}
+		return fnBP(o, map[string]any{"value": "bar"}, bps)
+	},
+	"883eaaa19889": func(o *HelperOptions) (any, error) { return o.Lookup("testProperty"), nil }, // function testHelper(options) {
 }
+
+// jsGlobalValue is the JS global `value` one helper keeps (undefined: nil).
+// runRender resets it per test.
+var jsGlobalValue any
 
 // arg is JS positional parameter i (undefined when not passed).
 func arg(o *HelperOptions, i int) any {
@@ -43,5 +261,54 @@ func arg(o *HelperOptions, i int) any {
 	return nil
 }
 
-// jsStr is JS String(v) for string concatenation in ported helpers.
-func jsStr(v any) string { return string(appendValue(nil, v, false, math.MaxInt)) }
+// jsStr is JS String(v) for string concatenation in ported helpers. The
+// harness decodes JSON null as nil too, so nil can't tell null from
+// undefined; it prints "undefined" (missing args/properties are far more
+// common in the corpus than explicit nulls).
+func jsStr(v any) string {
+	if v == nil {
+		return "undefined"
+	}
+	return string(appendValue(nil, v, false, math.MaxInt))
+}
+
+// jsTypeof is JS typeof for the values the harness produces.
+func jsTypeof(v any) string {
+	switch v.(type) {
+	case nil:
+		return "undefined"
+	case string:
+		return "string"
+	case float64, int:
+		return "number"
+	case bool:
+		return "boolean"
+	case Helper, func(*HelperOptions) (any, error):
+		return "function"
+	}
+	return "object"
+}
+
+// toUpperCase is JS v.toUpperCase(): a TypeError unless v is a string.
+func toUpperCase(v any) (string, error) {
+	s, ok := v.(string)
+	if !ok {
+		return "", errors.New("TypeError: toUpperCase of " + jsStr(v))
+	}
+	return strings.ToUpper(s), nil
+}
+
+// fnBP is JS options.fn(ctx, {blockParams: bps}).
+func fnBP(o *HelperOptions, ctx any, bps []any) (string, error) {
+	var sb strings.Builder
+	err := o.FnTo(&sb, ctx, bps, nil)
+	return sb.String(), err
+}
+
+// equalsBlockParams is the spec's equals(options.fn.blockParams, n).
+func equalsBlockParams(o *HelperOptions, n int) error {
+	if got := len(o.BlockParamNames()); got != n {
+		return errors.New("equals: options.fn.blockParams = " + strconv.Itoa(got) + ", want " + strconv.Itoa(n))
+	}
+	return nil
+}
