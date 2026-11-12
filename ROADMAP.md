@@ -430,17 +430,17 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 7: @data semantics → data.json 22/22
+### Task 7: @data semantics → data.json 22/22 ✅ (21/22; 1 partials test → Task 9)
 
 **Files:**
 
 - Modify: `render.go`, `handlebars.go` (`RenderWithData` initial frame, `Options.Data=false` disables frame creation), `spec_funcs_test.go`
 
-- [ ] **Step 1:** `runtimeOptions.data` (27 tests corpus-wide) seeds the root frame — harness already passes it via `RenderWithData`. Implement `@root` (auto-set to root context), nested overrides, `Options.Data == false` → data tracking off (16 tests; `{{@foo}}` then resolves nil / helpers see no frame).
+- [x] **Step 1:** `runtimeOptions.data` (27 tests corpus-wide) seeds the root frame — harness already passes it via `RenderWithData`. Implement `@root` (auto-set to root context), nested overrides, `Options.Data == false` → data tracking off (16 tests; `{{@foo}}` then resolves nil / helpers see no frame).
 
-- [ ] **Step 2:** Run data.json to **22/22**; re-run full suite for regressions.
+- [x] **Step 2:** Run data.json to **22/22**; re-run full suite for regressions.
 
-- [ ] **Step 3: Commit** `feat: @data variables (data 22/22)`.
+- [x] **Step 3: Commit** `feat: @data variables (data 22/22)`.
 
 ---
 
