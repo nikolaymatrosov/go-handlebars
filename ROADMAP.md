@@ -444,7 +444,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 8: Subexpressions → subexpressions.json 16/18 (2 stringParams skips) ✅
+### Task 8: Subexpressions → subexpressions.json 16/18 (2 stringParams skips) ✅ (18/18 after Task 11)
 
 **Files:**
 
@@ -489,16 +489,16 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 11: Legacy options → string-params.json 8/8, track-ids.json 17/17, remaining skips → 0
+### Task 11: Legacy options → string-params.json 8/8, track-ids.json 17/17, remaining skips → 0 ✅ (632/632)
 
 **Files:**
 
 - Modify: `helpers.go`, `render.go`, `spec_funcs_test.go`
 
-- [ ] **Step 1: `StringParams`** (10 tests): args passed to helpers as path *strings* instead of resolved values; `options.types`/`options.hashTypes` arrays exposed on `HelperOptions` as `Types []string` / `HashTypes map[string]string` (add these two exported fields — they are additive, allowed). Mirror `compiler.js` stringParams mode.
-- [ ] **Step 2: `TrackIDs`** (17 tests): `options.ids`/`hashIds` → `IDs []string` / `HashIDs map[string]string` fields; ids are contextual source paths (see `track-ids.json` expectations and `javascript-compiler.js` `trackIds` handling).
-- [ ] **Step 3: Full sweep:** `go test ./... | tail -20` → **632/632 pass, 0 fail, 0 skip**. Fix stragglers.
-- [ ] **Step 4: Commit** `feat: stringParams + trackIds; full handlebars-spec green (632/632)`.
+- [x] **Step 1: `StringParams`** (10 tests): args passed to helpers as path *strings* instead of resolved values; `options.types`/`options.hashTypes` arrays exposed on `HelperOptions` as `Types []string` / `HashTypes map[string]string` (add these two exported fields — they are additive, allowed). Mirror `compiler.js` stringParams mode.
+- [x] **Step 2: `TrackIDs`** (17 tests): `options.ids`/`hashIds` → `IDs []string` / `HashIDs map[string]string` fields; ids are contextual source paths (see `track-ids.json` expectations and `javascript-compiler.js` `trackIds` handling).
+- [x] **Step 3: Full sweep:** `go test ./... | tail -20` → **632/632 pass, 0 fail, 0 skip**. Fix stragglers.
+- [x] **Step 4: Commit** `feat: stringParams + trackIds; full handlebars-spec green (632/632)`.
 
 ---
 
