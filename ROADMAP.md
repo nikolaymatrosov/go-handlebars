@@ -568,9 +568,9 @@ Run `go test -fuzz=FuzzParse -fuzztime=120s` and fix every panic/hang found (com
 
 - Create: `bench_test.go`; targeted edits across `render.go`/`value.go`/`escape.go`
 
-- [ ] **Step 1: Benchmarks** with `b.ReportAllocs()`: (a) static-heavy template, (b) `{{#each}}` over 1000 items with 3 fields, (c) partial-heavy, (d) escape-heavy. Baseline numbers recorded in the commit message.
-- [ ] **Step 2: Audit with `-benchmem` + profiles.** Required outcomes: zero allocations per render for (a) when using `RenderTo` with a reusable writer (pool `renderState` + `outWriter` in a `sync.Pool`); no per-iteration allocations in (b) beyond unavoidable `any` boxing of looked-up values; `jsNumString`/numbers formatted via `strconv.AppendFloat` into `outWriter.scratch`.
-- [ ] **Step 3: `testing.AllocsPerRun` assertions** in `bench_test.go` for case (a) (`== 0`) and an escape-only write (`== 0`), so regressions fail CI, not just benchmarks.
+- [x] **Step 1: Benchmarks** with `b.ReportAllocs()`: (a) static-heavy template, (b) `{{#each}}` over 1000 items with 3 fields, (c) partial-heavy, (d) escape-heavy. Baseline numbers recorded in the commit message.
+- [x] **Step 2: Audit with `-benchmem` + profiles.** Required outcomes: zero allocations per render for (a) when using `RenderTo` with a reusable writer (pool `renderState` + `outWriter` in a `sync.Pool`); no per-iteration allocations in (b) beyond unavoidable `any` boxing of looked-up values; `jsNumString`/numbers formatted via `strconv.AppendFloat` into `outWriter.scratch`.
+- [x] **Step 3: `testing.AllocsPerRun` assertions** in `bench_test.go` for case (a) (`== 0`) and an escape-only write (`== 0`), so regressions fail CI, not just benchmarks.
 - [ ] **Step 4: README.md**: API example, security model (Limits table with defaults and what attack each stops), spec-compliance statement (632/632, corpus commit hash), concurrency contract. Written for library users.
 - [ ] **Step 5: Commit** `perf: pooled render state, zero-alloc static render + README`.
 
