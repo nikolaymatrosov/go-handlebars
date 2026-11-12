@@ -171,7 +171,7 @@ func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
 		return err
 	}
 	if f := r.frame; f != nil {
-		f.key, f.arr, f.index, f.first, f.last = key, arr, idx, r.n == 0, last
+		f.key, f.arr, f.index, f.first, f.last = key, arr, idx, idx == 0, last
 	}
 	if r.bp != nil {
 		r.bp[0] = v
