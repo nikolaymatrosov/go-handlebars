@@ -87,7 +87,15 @@ func (o *HelperOptions) FnWith(ctx any) (string, error) { return o.s.renderStrin
 // it). The bytes count against MaxOutputSize;
 // w is the helper's own sink, not the template's output.
 func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars map[string]any) error {
-	return o.s.renderTo(w, o.fn, ctx, bpFrame{vals: blockParams}, o.s.newFrame(dataVars))
+	return o.FnToPaths(w, ctx, blockParams, nil, dataVars)
+}
+
+// FnToPaths is FnTo plus the block params' source paths (JS
+// blockParams.path): under TrackIDs an argument rooted at block param i
+// gets paths[i] as its id ("undefined" when missing).
+// API change: new.
+func (o *HelperOptions) FnToPaths(w io.Writer, ctx any, blockParams []any, paths []string, dataVars map[string]any) error {
+	return o.s.renderTo(w, o.fn, ctx, bpFrame{vals: blockParams, ids: paths}, o.s.newFrame(dataVars))
 }
 
 // Inverse renders the {{else}} block with the helper's `this`.

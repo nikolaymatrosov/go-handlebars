@@ -153,7 +153,10 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 		// ponytail: ids are strings, so a path named [null]/[undefined]
 		// reads as falsy here; keep the JS id kinds if that ever matters.
 		id := "" // the implicit context's
-		if len(n.params) > 0 {
+		switch {
+		case n.hash != nil: // invokePartialWrapper: options.ids[0] = true
+			id = "true"
+		case len(n.params) > 0:
 			id = s.paramID(n.params[0])
 		}
 		if id != "" && id != "null" && id != "undefined" {

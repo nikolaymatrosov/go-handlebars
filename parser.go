@@ -352,7 +352,11 @@ func (p *parser) helperName(expected tokSet) (node, error) {
 		return p.path(t, true)
 	case tSTRING:
 		p.next()
-		return &strLit{at(t), t.text}, nil
+		n := &strLit{loc: at(t), value: t.text}
+		if p.opts.StringParams {
+			n.legacy = stringParam(t.text)
+		}
+		return n, nil
 	case tNUMBER:
 		p.next()
 		f, _ := strconv.ParseFloat(t.text, 64) // lexer guarantees -?\d+(\.\d+)?; overflow gives ±Inf like JS
@@ -415,12 +419,8 @@ func (p *parser) path(start token, data bool) (node, error) {
 		pe.bpDepth, pe.bpIdx, pe.bp = p.blockParamIndex(pe.parts[0])
 	}
 	switch { // compiler.js pushParam; stringParams wins, as there
-	case p.opts.StringParams: // value.replace(/^(\.?\.\/)*/g, '').replace(/\//g, '.')
-		s := pe.original
-		for strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") {
-			s = s[strings.IndexByte(s, '/')+1:]
-		}
-		pe.legacy = strings.ReplaceAll(s, "/", ".")
+	case p.opts.StringParams:
+		pe.legacy = stringParam(pe.original)
 	case p.opts.TrackIDs && pe.bp: // pushId('BlockParam', ..., parts.slice(1).join('.'))
 		pe.legacy = strings.Join(pe.parts[1:], ".")
 	case p.opts.TrackIDs: // original.replace(/^this(?:\.|$)/, '').replace(/^\.\//, '').replace(/^\.$/, '')
@@ -434,6 +434,16 @@ func (p *parser) path(start token, data bool) (node, error) {
 		pe.legacy = s
 	}
 	return pe, nil
+}
+
+// stringParam is compiler.js pushParam's stringParams form of a string
+// value (a path's original or a string literal; numbers and booleans have
+// no .replace): value.replace(/^(\.?\.\/)*/g, "").replace(/\//g, ".").
+func stringParam(s string) string {
+	for strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") {
+		s = s[strings.IndexByte(s, '/')+1:]
+	}
+	return strings.ReplaceAll(s, "/", ".")
 }
 
 // blockParamIndex is compiler.js blockParamIndex: the (program depth, index)

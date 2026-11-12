@@ -580,8 +580,12 @@ func TestLegacyOptions(t *testing.T) {
 		{track, "{{#with foo}}{{#with this}}{{cp}}{{/with}}{{/with}}", "foo."},
 		{track, `{{#with "lit"}}{{cp}}{{/with}}`, "null"},
 		{track, "{{#bp as |x|}}{{ids x.y}}{{/bp}}", "undefined.y"}, // FnTo passes no blockParams.path
+		{track, "{{#bpp as |x|}}{{ids x.y x}}{{/bpp}}", "zomg.y,zomg"},
+		{track, "{{> p foo a=1}}{{cp}}", "true;true"}, // a hash makes ids[0] true (invokePartialWrapper)
+		{track, "{{> p a=1}}{{cp}}", "true;true"},
 		{str, "{{args ../a ./b c/d this . null undefined 1 @x}}",
-			"[a b c.d this .   1 @x] [PathExpression PathExpression PathExpression PathExpression PathExpression NullLiteral UndefinedLiteral NumberLiteral PathExpression]"},
+			"[a b c.d this .   1 @x] [PathExpression PathExpression PathExpression PathExpression PathExpression NullLiteral UndefinedLiteral NumberLiteral PathExpression] map[]"},
+		{str, `{{args "a/b" "./c" 1 true x="../d/e"}}`, "[a.b c 1 true] [StringLiteral StringLiteral NumberLiteral BooleanLiteral] map[x:d.e]"}, // strings get the path transform too
 		{str, "{{> q foo}}|{{> q}}", "foo|"}, // the implicit partial context is a string param too
 		{str, "{{#if nope}}y{{else}}n{{/if}}", "y"},
 		{Options{StringParams: true, TrackIDs: true}, "{{ids foo}}", ""}, // stringParams wins, as in pushParam
@@ -598,10 +602,15 @@ func TestLegacyOptions(t *testing.T) {
 			return strings.Join(o.Legacy.IDs, ","), nil
 		})
 		tpl.RegisterHelper("cp", func(o *HelperOptions) (any, error) { return o.DataVar("contextPath"), nil })
-		tpl.RegisterHelper("args", func(o *HelperOptions) (any, error) { return fmt.Sprint(o.Args, o.Legacy.Types), nil })
+		tpl.RegisterHelper("args", func(o *HelperOptions) (any, error) { return fmt.Sprint(o.Args, o.Legacy.Types, o.Hash), nil })
 		tpl.RegisterHelper("bp", func(o *HelperOptions) (any, error) {
 			var sb strings.Builder
 			err := o.FnTo(&sb, o.Ctx(), []any{map[string]any{"y": 1}}, nil)
+			return sb.String(), err
+		})
+		tpl.RegisterHelper("bpp", func(o *HelperOptions) (any, error) {
+			var sb strings.Builder
+			err := o.FnToPaths(&sb, o.Ctx(), []any{map[string]any{"y": 1}}, []string{"zomg"}, nil)
 			return sb.String(), err
 		})
 		for name, src := range map[string]string{"p": "{{cp}};", "q": "{{this}}"} {

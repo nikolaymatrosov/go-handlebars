@@ -138,7 +138,8 @@ type pathExpr struct {
 type (
 	strLit struct {
 		loc
-		value string
+		value  string
+		legacy string // StringParams: the string pushParam passes for it as a param
 	}
 	numLit struct {
 		loc

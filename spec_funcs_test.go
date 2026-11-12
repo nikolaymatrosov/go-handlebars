@@ -470,7 +470,7 @@ var specFuncs = map[string]any{
 	},
 	"af10f4358d8e": func(o *HelperOptions) (any, error) { // blockParams = [this.is]; blockParams.path = ['zomg']; options.fn(this, {blockParams})
 		var sb strings.Builder
-		err := o.s.renderTo(&sb, o.fn, o.Ctx(), bpFrame{vals: []any{o.Lookup("is")}, ids: []string{"zomg"}}, nil)
+		err := o.FnToPaths(&sb, o.Ctx(), []any{o.Lookup("is")}, []string{"zomg"}, nil)
 		return sb.String(), err
 	},
 	"0654a8ee3da3": func(o *HelperOptions) (any, error) { // ids are [zomg.a, slave.driver, zomg]

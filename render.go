@@ -200,7 +200,7 @@ func (s *renderState) renderProgram(p *program, ctx any) error {
 
 // bpFrame is the block params a caller passes to a program (JS
 // options.fn(ctx, {blockParams})); ids is their JS blockParams.path, which
-// TrackIDs reads. nil ids: no path (Go helpers can't pass one).
+// TrackIDs reads. nil ids: no path (FnTo).
 type bpFrame struct {
 	vals []any
 	ids  []string
@@ -374,6 +374,9 @@ func (s *renderState) param(n node, ctx any) (any, error) {
 	case *subExpr:
 		return s.expr(&n.call, ctx, false, nil, nil)
 	case *strLit:
+		if s.opts.StringParams {
+			return n.legacy, nil
+		}
 		return n.value, nil
 	case *numLit:
 		return n.value, nil
