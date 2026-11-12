@@ -167,7 +167,7 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 		return &Error{Message: "The partial " + name + " could not be found"}
 	}
 	if s.depth >= s.limits.MaxRenderDepth {
-		return &LimitError{What: "render depth", Max: s.limits.MaxRenderDepth}
+		return s.depthErr()
 	}
 	out, indent := s.out, n.indent
 	if indent != "" && s.opts.PreventIndent { // compiler.js: appendContent(indent)

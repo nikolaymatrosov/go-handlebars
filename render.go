@@ -129,6 +129,9 @@ type renderState struct {
 	inlines *inlinePartial
 	opts    *Options // of the template being run: the root's or a partial's
 	ops     int
+	// depthHit: MaxRenderDepth was exceeded; the render fails even if a
+	// helper dropped the error, as the ops and output counters stay over.
+	depthHit bool
 	// emitted is the output byte count every outWriter of this render shares.
 	emitted int
 	limits  Limits
@@ -167,8 +170,11 @@ func (t *Template) render(ctx context.Context, out *outWriter, data any, dataVar
 	if err != nil {
 		return err
 	}
-	// Both counters stay over once exceeded, so a LimitError a helper
-	// swallowed still fails the render.
+	// Limits stay hit once exceeded, so a LimitError a helper swallowed
+	// still fails the render.
+	if s.depthHit {
+		return &LimitError{What: "render depth", Max: s.limits.MaxRenderDepth}
+	}
 	if s.emitted > s.limits.MaxOutputSize {
 		return &LimitError{What: "output size", Max: s.limits.MaxOutputSize}
 	}
@@ -189,6 +195,12 @@ func (s *renderState) step() error {
 		return s.ctx.Err()
 	}
 	return nil
+}
+
+// depthErr records and returns the MaxRenderDepth LimitError.
+func (s *renderState) depthErr() error {
+	s.depthHit = true
+	return &LimitError{What: "render depth", Max: s.limits.MaxRenderDepth}
 }
 
 // renderProgram renders a block program with ctx as `this`, like a
@@ -213,7 +225,7 @@ func (s *renderState) renderProgramBP(p *program, ctx any, blockParams bpFrame) 
 		return nil // container.noop
 	}
 	if s.depth >= s.limits.MaxRenderDepth {
-		return &LimitError{What: "render depth", Max: s.limits.MaxRenderDepth}
+		return s.depthErr()
 	}
 	outer := s.depths
 	var top any // JS depths[0]; undefined when an inline partial captured []

@@ -2,6 +2,7 @@ package handlebars
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -96,5 +97,38 @@ func TestPartialHashCopyOps(t *testing.T) {
 	var le *LimitError
 	if !errors.As(err, &le) || le.What != "ops" {
 		t.Errorf("err = %v, want ops LimitError", err)
+	}
+}
+
+// A LimitError inside a helper's Fn() fails the whole render, whether the
+// helper returns it (wrapped) or drops it.
+func TestLimitErrorsNotSwallowed(t *testing.T) {
+	nest := "{{#if t}}{{#if t}}{{#if t}}x{{/if}}{{/if}}{{/if}}"
+	cases := []struct {
+		limits Limits
+		body   string
+		what   string
+	}{
+		{Limits{MaxOps: 2}, "{{s}}{{s}}", "ops"},
+		{Limits{MaxOutputSize: 3}, "{{s}}", "output size"},
+		{Limits{MaxRenderDepth: 3}, nest, "render depth"},
+	}
+	helpers := map[string]Helper{
+		"wrap":    func(o *HelperOptions) (any, error) { _, err := o.Fn(); return nil, fmt.Errorf("wrap: %w", err) },
+		"swallow": func(o *HelperOptions) (any, error) { o.Fn(); return "", nil },
+	}
+	for _, c := range cases {
+		for name, h := range helpers {
+			tpl, err := ParseWithOptions("{{#"+name+"}}"+c.body+"{{/"+name+"}}after", Options{Limits: c.limits})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tpl.RegisterHelper(name, h)
+			got, err := tpl.Render(map[string]any{"s": "abcdef", "t": true})
+			var le *LimitError
+			if !errors.As(err, &le) || le.What != c.what || got != "" {
+				t.Errorf("%s/%s: %q, %v; want %s LimitError", name, c.what, got, err, c.what)
+			}
+		}
 	}
 }
