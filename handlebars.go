@@ -18,7 +18,8 @@ type Limits struct {
 	// Fn/FnTo call, loop iteration, argument or hash pair, path segment
 	// past the first, comment, partial call, inline partial bound or
 	// scanned, decorator, and key a hash partial copies; plus one per KiB
-	// of a long name or trackIds path the render hashes or copies.
+	// of a long name or trackIds path the render hashes or copies, and one
+	// per 8 scope entries a partial block or inline partial copies.
 	// API change: counts more than substitutions + helper calls + loop
 	// iterations, so work per op is bounded.
 	MaxOps int

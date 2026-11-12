@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -90,6 +91,35 @@ func TestInlinePartialOps(t *testing.T) {
 		}
 		if d := time.Since(start); d > time.Second {
 			t.Errorf("took %v", d)
+		}
+	}
+}
+
+// A partial block or an inline partial binds a copy of its scope, which is
+// O(depth): deep in blocks, making and running one costs an op per 8
+// entries copied, so MaxOps bounds the bytes copied too. Uncharged, each
+// case fit MaxOps, and at default limits the first took 2.7 s and 12 GB.
+func TestDeepClosureOps(t *testing.T) {
+	const maxOps = 100_000
+	ifs, endifs := strings.Repeat("{{#if 1}}", 80), strings.Repeat("{{/if}}", 80)
+	for _, src := range []string{
+		ifs + strings.Repeat("{{#> nope}}{{/nope}}", 20_000) + endifs,                                    // ~1 op per call uncharged
+		ifs + `{{#*inline "q"}}{{#if 1}}{{/if}}{{/inline}}` + strings.Repeat("{{> q}}", 20_000) + endifs, // ~4 ops per call uncharged
+	} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: maxOps}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		_, err = tpl.Render(nil)
+		runtime.ReadMemStats(&after)
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%.30s...: err = %v, want ops LimitError", src[len(ifs):], err)
+		}
+		if n := after.TotalAlloc - before.TotalAlloc; n > maxOps<<10 {
+			t.Errorf("%.30s...: allocated %d bytes, want at most 1 KiB per op", src[len(ifs):], n)
 		}
 	}
 }

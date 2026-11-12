@@ -64,28 +64,47 @@ type closure struct {
 // copied: the stack slots and {{#each}}'s block-param slice are reused once
 // the creator moves on, and a saved @partial-block can be replayed later
 // (FnTo dataVars). Copies have no spare capacity, so every run of the
-// closure appends to its own. ownFrame adds p's (param-less) frame.
-// The copies share one []any and one []string, so a closure costs at
-// most four allocations however deep the scope. The copy is O(depth),
-// which MaxRenderDepth bounds, so it charges no ops.
-func (s *renderState) closure(p *program, depths []any, ownFrame bool) closure {
+// closure appends to its own, but for one spare bps slot: it takes the
+// empty frame runClosure pushes, the same bpFrame{} from every run (nested
+// ones too), so a run whose body nests no block copies nothing. ownFrame
+// adds p's (param-less) frame. The copies share one []any and one
+// []string, so a closure costs at most four allocations however deep the
+// scope. The copy is O(depth), so it costs an op per 8 entries copied:
+// deep scopes can't make each partial call do a hundred entries' work
+// for one op.
+func (s *renderState) closure(p *program, depths []any, ownFrame bool) (closure, error) {
 	nv, ni := len(depths), 0
 	for _, f := range s.bps {
 		nv, ni = nv+len(f.vals), ni+len(f.ids)
 	}
-	vals := append(make([]any, 0, nv), depths...) // depths, then each frame's vals
-	ids := make([]string, 0, ni)
 	n := len(s.bps)
 	if ownFrame {
 		n++
 	}
-	bps := make([]bpFrame, n)
+	if err := s.steps((nv + ni + n) >> 3); err != nil {
+		return closure{}, err
+	}
+	vals := append(make([]any, 0, nv), depths...) // depths, then each frame's vals
+	ids := make([]string, 0, ni)
+	bps := make([]bpFrame, n, n+1)
 	for i, f := range s.bps {
 		v, d := len(vals), len(ids)
 		vals, ids = append(vals, f.vals...), append(ids, f.ids...)
 		bps[i] = bpFrame{vals[v:len(vals):len(vals)], ids[d:len(ids):len(ids)]}
 	}
-	return closure{p, vals[:len(depths):len(depths)], bps, s.opts}
+	return closure{p, vals[:len(depths):len(depths)], bps, s.opts}, nil
+}
+
+// runClosure renders c's program with ctx in c's scope. c's stacks have no
+// spare capacity past the bps slot its own frame takes, so a push of the
+// context or of a nested block's frame copies them: an op per 8 entries,
+// as closure charges.
+func (s *renderState) runClosure(c *closure, ctx any) error {
+	if err := s.steps((len(c.depths) + len(c.bps)) >> 3); err != nil {
+		return err
+	}
+	s.depths, s.bps, s.opts = c.depths, c.bps, c.opts
+	return s.renderProgramBP(c.prog, ctx, bpFrame{})
 }
 
 // inlinePartial is a {{#*inline "name"}} block in scope (JS
@@ -153,7 +172,11 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 	}
 	var block *partialBlock
 	if prog != nil {
-		block = &partialBlock{closure: s.closure(prog, s.depths, false), inlines: s.inlines, outer: s.partialBlock()}
+		c, err := s.closure(prog, s.depths, false)
+		if err != nil {
+			return err
+		}
+		block = &partialBlock{closure: c, inlines: s.inlines, outer: s.partialBlock()}
 		if !tg.found() {
 			tg.block = block // the failover content
 		}
@@ -199,7 +222,10 @@ func (s *renderState) partial(n *partialNode, ctx any) error {
 			s.data = &dataFrame{parent: s.data, blockSet: true, block: block}
 		}
 		if len(block.prog.inlines) > 0 { // JS fn.partials: the block's inline partials reach the partial
-			err = s.addInlines(block.prog, s.closure(nil, s.depths, true))
+			var c closure
+			if c, err = s.closure(nil, s.depths, true); err == nil {
+				err = s.addInlines(block.prog, c)
+			}
 		}
 	}
 	if err == nil {
@@ -242,16 +268,14 @@ func (s *renderState) invoke(tg target, ctx any, name string) error {
 		}
 		return s.run(p, ctx, outer)
 	case tg.inline != nil:
-		c := *tg.inline
-		s.depths, s.bps, s.opts = c.depths, c.bps, c.opts
-		return s.renderProgramBP(c.prog, ctx, bpFrame{})
+		return s.runClosure(tg.inline, ctx)
 	}
 	b := tg.block // partialBlockWrapper: the block runs with the @partial-block it was written under
-	s.depths, s.bps, s.opts, s.inlines = b.depths, b.bps, b.opts, b.inlines
+	s.inlines = b.inlines
 	if s.data != nil {
 		s.data = &dataFrame{parent: s.data, blockSet: true, block: b.outer}
 	}
-	return s.renderProgramBP(b.prog, ctx, bpFrame{})
+	return s.runClosure(&b.closure, ctx)
 }
 
 // partialName is a static name's original, or the dynamic (subexpression)
@@ -355,7 +379,10 @@ func (s *renderState) run(p *program, ctx any, outer []any) error {
 		return s.body(p.body, ctx)
 	}
 	scope := s.inlines
-	err := s.addInlines(p, s.closure(nil, outer, false))
+	c, err := s.closure(nil, outer, false)
+	if err == nil {
+		err = s.addInlines(p, c)
+	}
 	if err == nil {
 		err = s.body(p.body, ctx)
 	}

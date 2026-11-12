@@ -97,7 +97,7 @@ These count one op each:
 - a decorator;
 - a key that a hash partial copies.
 
-On top of those, the render charges one op per KiB of a long name or `trackIds` path that it hashes or copies. Work per op is bounded, so `MaxOps` bounds the whole render. For scale, the benchmark's `{{#each}}` over 1000 items with three substitutions per item uses 4,002 ops, which is 0.4% of the default.
+On top of those, the render charges one op per KiB of a long name or `trackIds` path that it hashes or copies, and one op per 8 entries of scope (contexts and block params) that a partial block or inline partial copies when it is bound or run. Work per op is bounded, so `MaxOps` bounds the whole render. For scale, the benchmark's `{{#each}}` over 1000 items with three substitutions per item uses 4,002 ops, which is 0.4% of the default.
 
 Further guarantees:
 
@@ -108,12 +108,12 @@ Further guarantees:
   - Cancellation is a stop signal, not a limit, so it is not sticky. If fewer than 1024 ops remain when a helper drops the error, the render can still complete.
 - **Partial templates.** A partial registered with `RegisterPartialTemplate` renders with its own parse-time Options, such as `Strict` or `NoEscape`. `Limits` and `Data` always come from the template being rendered.
 
-Known residual costs. All of these depend on the shape of the data, not the template alone, and each stays within a constant factor per op:
+Known residual costs. Both depend on the shape of the data, not the template alone, and each stays within a constant factor per op:
 
 - Formatting a deeply nested array as a key or in an error message is capped at 1 KiB of output, but 64-deep single-element arrays can still cost up to about 64k reflection steps per op. This applies to `lookup` keys and strict-mode error text.
 - A long string from the data used as a lookup key is hashed on each use. It is not charged by length; long strings from the template are.
-- A partial-block call copies its captured scope, which is O(depth) and bounded by `MaxRenderDepth`, without charging ops.
-- The fuzzers bound each input to 2 s, so they cannot catch an amplification that stays below that under their small limits.
+
+The fuzzers bound each input to 2 s, so they cannot catch an amplification that stays below that under their small limits.
 
 If the data is untrusted too, check its size and nesting before rendering.
 
