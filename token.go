@@ -50,9 +50,11 @@ func (k tokenKind) String() string { return tokenNames[k] }
 
 // token is one lexeme. text is a subslice of the source except where the
 // grammar transforms it (escaped mustaches, string/ID unescaping, raw end tags).
-// line is 1-based; col is 0-based in UTF-16 units (JS yylloc.first_column).
+// line is 1-based; col is 0-based in UTF-16 units (JS yylloc.first_column);
+// off is the byte offset of the token start in the source.
 type token struct {
 	kind      tokenKind
 	text      string
 	line, col int
+	off       int
 }

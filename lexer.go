@@ -103,7 +103,9 @@ func scanQuoted(s string, i int, q byte) int {
 	return -1
 }
 
-// lex scans src into tokens, ending with tEOF.
+// lex scans src into tokens, ending with tEOF. On a lexical error it returns
+// the tokens before it (no tEOF) with the error, so the parser can report
+// earlier errors first, as the lazy JS lexer does.
 func lex(src string, limits Limits) ([]token, error) {
 	limits = limits.withDefaults()
 	if len(src) > limits.MaxTemplateSize {
@@ -117,13 +119,18 @@ func lex(src string, limits Limits) ([]token, error) {
 		pos   int
 		// incremental line/col tracking; cur is the offset line/col describe
 		cur, line, col = 0, 1, 0
+		// Jison quirk, per match: after a line break, the column stops at the
+		// first U+2028/U+2029 (its /(?:\r\n?|\n).*/ excludes them) until the match ends.
+		nl, frozen bool
 	)
 	locate := func(off int) {
 		for ; cur < off; cur++ {
 			switch b := src[cur]; {
 			case b == '\n', b == '\r' && (cur+1 >= len(src) || src[cur+1] != '\n'):
-				line, col = line+1, 0
-			case b == '\r':
+				line, col, nl, frozen = line+1, 0, true, false
+			case b == '\r', frozen:
+			case nl && b == 0xe2 && cur+2 < len(src) && src[cur+1] == 0x80 && src[cur+2]&^1 == 0xa8: // U+2028/9
+				frozen = true
 			case b < 0x80, b >= 0xc0 && b < 0xf0:
 				col++
 			case b >= 0xf0:
@@ -133,16 +140,18 @@ func lex(src string, limits Limits) ([]token, error) {
 	}
 	emit := func(k tokenKind, start int, text string) {
 		locate(start)
-		toks = append(toks, token{k, text, line, col})
+		toks = append(toks, token{k, text, line, col, start})
 	}
 	fail := func(off int) ([]token, error) {
 		locate(off)
-		return nil, &Error{Line: line, Column: col, Message: "Lexical error on line " + itoa(line) + ". Unrecognized text."}
+		return toks, &Error{Line: line, Column: col, Message: "Lexical error on line " + itoa(line) + ". Unrecognized text.\n" + showPosition(src, token{off: off})}
 	}
 	pop := func() { stack = stack[:len(stack)-1] }
 	has := func(i int, p string) bool { return strings.HasPrefix(src[i:], p) }
 
 	for {
+		locate(pos) // each iteration is one Jison match
+		nl, frozen = false, false
 		if pos >= len(src) {
 			emit(tEOF, pos, "")
 			return toks, nil
@@ -339,7 +348,9 @@ func lexMu(src string, pos int, m *scanMemo) (k tokenKind, text string, end int)
 			if e := closeAt(q + 4); e >= 0 {
 				return tok(tINVERSE, e)
 			}
-			return tok(tOPEN_INVERSE_CHAIN, q+4)
+			if q+4 == len(src) || !isWordByte(src[q+4]) { // Jison compiles "else" as else\b
+				return tok(tOPEN_INVERSE_CHAIN, q+4)
+			}
 		}
 		switch {
 		case has(p, "{"):

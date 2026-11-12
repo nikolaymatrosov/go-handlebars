@@ -61,7 +61,10 @@ func (e *LimitError) Error() string {
 	return fmt.Sprintf("handlebars: %s limit exceeded (max %d)", e.What, e.Max)
 }
 
-// Error is a parse or runtime error with template position (1-based).
+// Error is a parse or runtime error with template position, like a
+// handlebars.js Exception with a loc: Line is 1-based, Column is the 0-based
+// JS column (UTF-16 units). Line 0 means no position.
+// API change: Column was documented as 1-based; it is the JS 0-based column.
 type Error struct {
 	Line, Column int
 	Message      string
@@ -94,10 +97,18 @@ type Options struct {
 func Parse(src string) (*Template, error) { return ParseWithOptions(src, Options{}) }
 
 func ParseWithOptions(src string, opts Options) (*Template, error) {
-	return nil, errNotImplemented
+	prog, err := parse(src, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &Template{prog: prog, opts: opts}, nil
 }
 
-type Template struct{}
+// Template is a parsed template.
+type Template struct {
+	prog *program
+	opts Options
+}
 
 // Registration is not concurrency-safe; register everything before rendering.
 func (t *Template) RegisterHelper(name string, h Helper) {}

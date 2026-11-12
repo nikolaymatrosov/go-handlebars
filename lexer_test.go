@@ -29,8 +29,8 @@ func TestLexPositions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []token{
-		{tCONTENT, "ab\n", 1, 0}, {tOPEN, "{{", 2, 0}, {tID, "foo", 2, 2}, {tCLOSE, "}}", 2, 5},
-		{tCONTENT, "\r\n ", 2, 7}, {tOPEN, "{{", 3, 1}, {tID, "bar", 3, 4}, {tCLOSE, "}}", 3, 8}, {tEOF, "", 3, 10},
+		{tCONTENT, "ab\n", 1, 0, 0}, {tOPEN, "{{", 2, 0, 3}, {tID, "foo", 2, 2, 5}, {tCLOSE, "}}", 2, 5, 8},
+		{tCONTENT, "\r\n ", 2, 7, 10}, {tOPEN, "{{", 3, 1, 13}, {tID, "bar", 3, 4, 16}, {tCLOSE, "}}", 3, 8, 20}, {tEOF, "", 3, 10, 22},
 	}
 	if len(toks) != len(want) {
 		t.Fatalf("got %v", toks)
@@ -77,6 +77,15 @@ func TestLexLinearOnUnterminated(t *testing.T) {
 		t.Logf("%s: %v", name, d)
 		if d > time.Second {
 			t.Errorf("%s: %v, want linear", name, d)
+		}
+	}
+}
+
+// Jison appends \b to the "else" literal: {{elsex}} is a mustache.
+func TestLexElseWordBoundary(t *testing.T) {
+	for src, want := range map[string]tokenKind{"{{elsex}}": tOPEN, "{{else x}}": tOPEN_INVERSE_CHAIN, "{{else(x)}}": tOPEN_INVERSE_CHAIN} {
+		if toks, err := lex(src, Limits{}); err != nil || toks[0].kind != want {
+			t.Errorf("lex(%q)[0] = %v, %v; want %v", src, toks, err, want)
 		}
 	}
 }

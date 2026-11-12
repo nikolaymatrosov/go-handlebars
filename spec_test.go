@@ -36,7 +36,7 @@ type specTest struct {
 // of the files it fixes; lowering a gate is forbidden. 0 = report only.
 var specGate = map[string]int{
 	"tokenizer.json":          78,
-	"parser.json":             0,
+	"parser.json":             79,
 	"basic.json":              0,
 	"blocks.json":             0,
 	"builtins.json":           0,
