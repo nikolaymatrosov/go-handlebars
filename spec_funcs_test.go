@@ -309,6 +309,29 @@ var specFuncs = map[string]any{
 		return fnBP(o, map[string]any{"value": "bar"}, bps)
 	},
 	"883eaaa19889": func(o *HelperOptions) (any, error) { return o.Lookup("testProperty"), nil }, // function testHelper(options) {
+
+	// subexpressions.json
+	"faacc7899f0c": func(o *HelperOptions) (any, error) { return jsAdd(arg(o, 0), arg(o, 0)), nil },       // function (val) { return val + val; }
+	"81c58ad34d6a": func(o *HelperOptions) (any, error) { return "LOL", nil },                             // function () { return 'LOL'; }
+	"dc5b267caf9e": func(o *HelperOptions) (any, error) { return "val is " + jsStr(arg(o, 0)), nil },      // function (val) { return 'val is ' + val; }
+	"5164d1a7abb9": func(o *HelperOptions) (any, error) { return sameContext(arg(o, 0), arg(o, 1)), nil }, // function (x, y) { return x === y; }
+	"b1770e78e6be": func(o *HelperOptions) (any, error) { // function (val, that, theOther) { return 'val is ' + val + ', ' + that + ' and ' + theOther; }
+		return "val is " + jsStr(arg(o, 0)) + ", " + jsStr(arg(o, 1)) + " and " + jsStr(arg(o, 2)), nil
+	},
+	"6bb0b8d5fe08": func(o *HelperOptions) (any, error) { return jsStr(arg(o, 0)) + "-" + jsStr(arg(o, 1)), nil }, // function (a, b) { return a + '-' + b; }
+	"f2e7444f26ff": func(o *HelperOptions) (any, error) { return jsAdd(arg(o, 0), arg(o, 1)), nil },               // function (a, b) { return a + b; }
+	"76f4c611745d": func(o *HelperOptions) (any, error) { // function(x, y, options) { throws if options is reused; return x === y; }
+		if o == lastOptions {
+			return nil, errors.New("options hash was reused")
+		}
+		lastOptions = o
+		return sameContext(arg(o, 0), arg(o, 1)), nil
+	},
+	"19739d747f1e": func(o *HelperOptions) (any, error) { return "val is " + jsStr(o.Hash["fun"]), nil }, // function (options) { return "val is " + options.hash.fun; }
+	"aac91cb8eab8": func(o *HelperOptions) (any, error) { // function (options) { ... new SafeString('<input aria-label="' + ariaLabel + '" placeholder="' + placeholder + '" />') }
+		return SafeString(`<input aria-label="` + escapeString(jsStr(o.Hash["aria-label"])) + `" placeholder="` + escapeString(jsStr(o.Hash["placeholder"])) + `" />`), nil
+	},
+	"ecc60e33a563": func(o *HelperOptions) (any, error) { return SafeString(jsStr(arg(o, 0))), nil }, // function (defaultString) { return new SafeString(defaultString); }
 }
 
 // jsGlobalValue is the JS global `value` one helper keeps (undefined: nil).
@@ -391,4 +414,20 @@ func exclaim(o *HelperOptions, s string) string {
 		return s
 	}
 	return ""
+}
+
+// lastOptions is the spec's global.lastOptions.
+var lastOptions *HelperOptions
+
+// escapeString is Handlebars.Utils.escapeExpression for a string.
+func escapeString(s string) string { return string(appendEscaped(nil, s)) }
+
+// jsAdd is JS a + b for numbers and strings.
+func jsAdd(a, b any) any {
+	x, xok := a.(float64)
+	y, yok := b.(float64)
+	if xok && yok {
+		return x + y
+	}
+	return jsStr(a) + jsStr(b)
 }

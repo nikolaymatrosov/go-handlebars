@@ -46,7 +46,7 @@ var specGate = map[string]int{
 	"regressions.json":        26,
 	"strict.json":             7,
 	"string-params.json":      0,
-	"subexpressions.json":     0,
+	"subexpressions.json":     16,
 	"track-ids.json":          0,
 	"whitespace-control.json": 31,
 }
