@@ -401,11 +401,11 @@ func (s *renderState) invokeHelper(c *call, ctx any, fn, inverse *program) (any,
 }
 
 // callOwned is callHelper for invokeHelper's own options, which it
-// recycles once a builtin is done with them. User code may keep them, and
-// log hands o.Args to the Logger, so those are left to the GC.
+// recycles once a builtin is done with them. User code may keep them, so
+// those are left to the GC.
 func (s *renderState) callOwned(h Helper, builtin bool, o *HelperOptions) (any, error) {
 	v, err := s.callHelper(o.Name, h, builtin, o)
-	if builtin && o.Name != "log" {
+	if builtin {
 		s.freeOpts.put(o)
 	}
 	return v, err

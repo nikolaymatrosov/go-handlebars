@@ -117,6 +117,7 @@ type Template struct {
 
 	// Logger receives {{log}} output: level is "debug", "info", "warn",
 	// "error" or "log" (an out-of-range numeric level). Nil discards it.
+	// args is the Logger's own copy: it may keep it.
 	// API change: new; replaces handlebars.js's console-backed logger.log.
 	Logger func(level string, args ...any)
 }

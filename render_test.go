@@ -340,6 +340,36 @@ func TestBuiltinsExtra(t *testing.T) {
 	}
 }
 
+// A Logger may keep its args: they are a copy, not the recycled options'
+// storage, so later renders can't clear or refill them. @log with log not
+// a known helper reaches the builtin under another name.
+func TestLoggerKeepsArgs(t *testing.T) {
+	for _, c := range []struct {
+		src  string
+		opts Options
+	}{
+		{"{{log 'a' 'b'}}", Options{}},
+		{"{{@log 'a' 'b'}}", Options{KnownHelpers: map[string]bool{"log": false}}},
+	} {
+		tpl, err := ParseWithOptions(c.src, c.opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var kept []any
+		tpl.Logger = func(_ string, args ...any) { kept = args }
+		if _, err := tpl.Render(nil); err != nil {
+			t.Fatal(err)
+		}
+		other, _ := Parse("{{lookup . 'x'}}{{lookup . 'y'}}")
+		for i := 0; i < 10; i++ {
+			other.Render(map[string]any{"x": "X", "y": "Y"})
+		}
+		if fmt.Sprint(kept) != "[a b]" {
+			t.Errorf("%s: kept args = %v, want [a b]", c.src, kept)
+		}
+	}
+}
+
 func TestLoggerPanicRecovered(t *testing.T) {
 	tpl, _ := Parse("a{{log 'x'}}b")
 	tpl.Logger = func(string, ...any) { panic("boom") }

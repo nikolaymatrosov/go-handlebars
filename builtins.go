@@ -149,10 +149,12 @@ func logHelper(o *HelperOptions) (any, error) {
 	if level < float64(len(logLevels)) && level == float64(int(level)) {
 		name = logLevels[int(level)]
 	}
-	// The Logger is user code: run it under s.call's recover. It gets
-	// values only, not o, so the state stays poolable.
+	// The Logger is user code: run it under s.call's recover. It gets a
+	// copy of the args, not o (recycled once log returns), so it may keep
+	// them and the state stays poolable.
+	args := slices.Clone(o.Args)
 	return o.s.call("log", func(*HelperOptions) (any, error) {
-		o.s.t.Logger(name, o.Args...)
+		o.s.t.Logger(name, args...)
 		return nil, nil
 	}, nil)
 }
