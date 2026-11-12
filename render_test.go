@@ -733,3 +733,89 @@ func TestPooledStateReset(t *testing.T) {
 		}
 	}
 }
+
+// retainProbe is a template whose helper keeps its HelperOptions past the
+// render (unsupported, but it must not reach other renders), plus the
+// probe of what that stale o now sees.
+func retainProbe(t *testing.T) (a *Template, probe func() (string, any)) {
+	t.Helper()
+	a, err := Parse("{{#keep}}{{@root.secret}}{{/keep}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var o *HelperOptions
+	a.RegisterHelper("keep", func(h *HelperOptions) (any, error) { o = h; return h.Fn() })
+	return a, func() (string, any) {
+		s, _ := o.Fn()
+		root, _ := o.DataVar("root").(map[string]any)
+		return s, root["secret"]
+	}
+}
+
+// TestRetainedOptionsSequential: render B, after A kept its options, must
+// not be what A's stale options see.
+func TestRetainedOptionsSequential(t *testing.T) {
+	a, probe := retainProbe(t)
+	if got, err := a.Render(map[string]any{"secret": "A-secret"}); err != nil || got != "A-secret" {
+		t.Fatalf("A = %q, %v", got, err)
+	}
+	b, err := Parse("{{probe}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fn string
+	var root any
+	b.RegisterHelper("probe", func(*HelperOptions) (any, error) { fn, root = probe(); return nil, nil })
+	if _, err := b.Render(map[string]any{"secret": "B-secret"}); err != nil {
+		t.Fatal(err)
+	}
+	if fn != "A-secret" || root != "A-secret" {
+		t.Errorf("A's kept options during B: Fn() = %q, @root.secret = %v; want A-secret for both", fn, root)
+	}
+}
+
+// TestRetainedOptionsConcurrent: another goroutine using A's kept options
+// while B renders (meant for -race) leaves B alone.
+func TestRetainedOptionsConcurrent(t *testing.T) {
+	a, probe := retainProbe(t)
+	b, err := Parse("{{#each items as |v i|}}{{v}}{{i}}{{@root.secret}}{{/each}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := make([]any, 1000)
+	for i := range items {
+		items[i] = i
+	}
+	dataB := map[string]any{"secret": "B", "items": items}
+	want, err := b.Render(dataB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 20; round++ {
+		if _, err := a.Render(map[string]any{"secret": "A-secret"}); err != nil {
+			t.Fatal(err)
+		}
+		stop, bad := make(chan struct{}), make(chan string, 1)
+		go func() { // abuses A's options, which A's render is done with
+			defer func() { bad <- fmt.Sprint(recover()) }()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if fn, root := probe(); fn != "A-secret" || root != "A-secret" {
+					panic(fmt.Sprintf("Fn() = %.40q, @root.secret = %.40v", fn, root))
+				}
+			}
+		}()
+		got, err := b.Render(dataB)
+		close(stop)
+		if p := <-bad; p != "<nil>" {
+			t.Fatalf("round %d: A's kept options: %s", round, p)
+		}
+		if err != nil || got != want {
+			t.Fatalf("round %d: B = %d bytes, %v; want %d bytes", round, len(got), err, len(want))
+		}
+	}
+}

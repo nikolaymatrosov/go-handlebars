@@ -149,11 +149,12 @@ func logHelper(o *HelperOptions) (any, error) {
 	if level < float64(len(logLevels)) && level == float64(int(level)) {
 		name = logLevels[int(level)]
 	}
-	// The Logger is user code: run it under s.call's recover.
+	// The Logger is user code: run it under s.call's recover. It gets
+	// values only, not o, so the state stays poolable.
 	return o.s.call("log", func(*HelperOptions) (any, error) {
 		o.s.t.Logger(name, o.Args...)
 		return nil, nil
-	}, o)
+	}, nil)
 }
 
 // logLevel is logger.lookupLevel: names map to their index, other strings

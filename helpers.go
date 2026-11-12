@@ -19,8 +19,9 @@ import (
 type Helper func(opts *HelperOptions) (any, error)
 
 // HelperOptions carries evaluated arguments and block closures. It is valid
-// only during the helper call: the render state behind it is reused by
-// later renders, possibly on other goroutines.
+// only during the helper call. Retaining it is unsupported, but it never
+// touches other renders: a render that handed one to user code doesn't
+// recycle its state.
 type HelperOptions struct {
 	Name string         // helper name as written in the template
 	Args []any          // evaluated positional args
@@ -277,7 +278,12 @@ var ErrHelperPanic = errors.New("handlebars: helper panicked")
 // call runs h, a user-supplied function, as name. A panic in it becomes an
 // ErrHelperPanic error and the render state is restored, so the render
 // fails cleanly even if the panic hit mid-block. Builtins must not use it.
+// Every HelperOptions user code sees is passed here, so a non-nil o marks
+// s escaped: user code may keep o, so s is never pooled.
 func (s *renderState) call(name string, h Helper, o *HelperOptions) (v any, err error) {
+	if o != nil {
+		s.escaped = true
+	}
 	out, depths, bps, depth, data, inlines, opts := s.out, s.depths, s.bps, s.depth, s.data, s.inlines, s.opts
 	defer func() {
 		if r := recover(); r != nil {

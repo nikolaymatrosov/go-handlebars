@@ -163,6 +163,10 @@ type renderState struct {
 	// (128 KB) per render to none.
 	freeOpts freeList[HelperOptions]
 	freeRuns freeList[eachRun]
+
+	// escaped: user code got a HelperOptions bound to s (see call) and may
+	// keep it, so release leaves s to the GC instead of the pool.
+	escaped bool
 }
 
 // freeList recycles values whose owner is done with them; put zeroes them.
@@ -212,10 +216,13 @@ func newState(t *Template, ctx context.Context, w io.Writer) *renderState {
 	return s
 }
 
-// release clears s and returns it to the pool. It keeps the stacks and
-// buffers, emptied, but nothing from the render (data, writer, template),
-// so a pooled state pins no caller memory.
+// release clears s and returns it to the pool, unless it escaped to user
+// code. It keeps the stacks and buffers, emptied, but nothing from the
+// render (data, writer, template), so a pooled state pins no caller memory.
 func (s *renderState) release() {
+	if s.escaped {
+		return
+	}
 	clear(s.depths[:cap(s.depths)])
 	clear(s.bps[:cap(s.bps)])
 	clear(s.root.indents[:cap(s.root.indents)])
