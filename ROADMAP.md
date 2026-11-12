@@ -383,7 +383,7 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 
 ---
 
-### Task 5: Helpers API → helpers.json green except stringParams/trackIds/knownHelpers edge set
+### Task 5: Helpers API → helpers.json green except stringParams/trackIds/knownHelpers edge set ✅ (75/87; 12 need if/unless/with → Task 6)
 
 **Files:**
 
@@ -395,15 +395,15 @@ func jsNumString(f float64) string     // JS Number#toString: integral => no ".0
 - Produces: the locked `Helper` + `HelperOptions` API; registry `map[string]Helper` on `Template`; dispatch rules ported from `runtime.js`/compiler: a mustache/block whose path is a registered helper name (or `knownHelpers`) is a helper call; `helperMissing` hook fires for `{{foo 1}}` with args and no helper; `blockHelperMissing` for block fallthrough; hash args evaluated into `map[string]any`; subexpression params deferred to Task 8 (parser already builds them; evaluator for `subExpr` params lands there — plain params here).
 - `HelperOptions.Fn/FnWith/Inverse` render the block program into a pooled `[]byte` buffer and return `string`; `FnTo/InverseTo` write straight into the caller's writer (builtins use these; byte/op accounting flows through the same `outWriter` either way — a helper-returned string is written (escaped unless SafeString) through `writeValue`, so `MaxOutputSize` still holds).
 
-- [ ] **Step 1: Implement dispatch + `HelperOptions`** per above. Helper return values: `string`, `SafeString`, numbers, bool, nil, any — written via `writeValue`. Errors from helpers abort rendering and surface from `Render*`.
+- [x] **Step 1: Implement dispatch + `HelperOptions`** per above. Helper return values: `string`, `SafeString`, numbers, bool, nil, any — written via `writeValue`. Errors from helpers abort rendering and surface from `Render*`.
 
-- [ ] **Step 2: `KnownHelpers`/`KnownHelpersOnly`** (9+3 tests): with `KnownHelpersOnly`, non-known paths are always context lookups, known names always helper calls (match `compiler.js` semantics).
+- [x] **Step 2: `KnownHelpers`/`KnownHelpersOnly`** (9+3 tests): with `KnownHelpersOnly`, non-known paths are always context lookups, known names always helper calls (match `compiler.js` semantics).
 
-- [ ] **Step 3: Port helper specFuncs.** `HBSPEC_STUBS=1 HBSPEC_FILE=helpers.json ...` and port JS bodies. Convention for the table: value shapes `Helper`, `func() any`, `func(ctx any) any`; key = `sha1hex(jsSource)[:12]`. Port faithfully including `options.fn(this)` → `o.Fn()`, `options.inverse()` → `o.Inverse()`, `options.hash`, `arguments.length` checks → `len(o.Args)`.
+- [x] **Step 3: Port helper specFuncs.** `HBSPEC_STUBS=1 HBSPEC_FILE=helpers.json ...` and port JS bodies. Convention for the table: value shapes `Helper`, `func() any`, `func(ctx any) any`; key = `sha1hex(jsSource)[:12]`. Port faithfully including `options.fn(this)` → `o.Fn()`, `options.inverse()` → `o.Inverse()`, `options.hash`, `arguments.length` checks → `len(o.Args)`.
 
-- [ ] **Step 4: Run helpers.json** — target: **0 fail; skips only for tests whose compileOptions include stringParams/trackIds** (count them with `python3 - <<…`; expect ≈0–5, they mostly live in their own files). blocks/basic stay green.
+- [x] **Step 4: Run helpers.json** — target: **0 fail; skips only for tests whose compileOptions include stringParams/trackIds** (count them with `python3 - <<…`; expect ≈0–5, they mostly live in their own files). blocks/basic stay green.
 
-- [ ] **Step 5: Commit** `feat: helpers API + registry (helpers spec green mod legacy opts)`.
+- [x] **Step 5: Commit** `feat: helpers API + registry (helpers spec green mod legacy opts)`.
 
 ---
 
