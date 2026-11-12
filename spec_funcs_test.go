@@ -47,6 +47,56 @@ var specFuncs = map[string]any{
 		return []any{map[string]any{"text": "goodbye"}, map[string]any{"text": "Goodbye"}, map[string]any{"text": "GOODBYE"}}, nil
 	},
 
+	// regressions.json
+	"c1411e25d8f0": func(o *HelperOptions) (any, error) { return "blah", nil },                   // function () { return 'blah'; }
+	"62102493c36e": func(o *HelperOptions) (any, error) { return o.FnWith("") },                  // function (block) { return block.fn(''); }
+	"502dcb8e3d45": func(o *HelperOptions) (any, error) { s, err := o.Inverse(); return s, err }, // function (block) { return block.inverse(''); }
+	"24e968a2fd90": func(o *HelperOptions) (any, error) { return jsStr(arg(o, 0)), nil },         // function (value) { return value + ''; }
+	"f1328be48878": func(o *HelperOptions) (any, error) { // function(conditional, options) { if (conditional) return options.fn(this); else return options.inverse(this); }
+		if jsTruthy(arg(o, 0)) {
+			return o.Fn()
+		}
+		return o.Inverse()
+	},
+	"be4daadd8d6d": func(o *HelperOptions) (any, error) { return o.Hash["length"], nil }, // function(options) { return options.hash.length; }
+
+	// data.json
+	"4a8f31bb6da2": func(o *HelperOptions) (any, error) { // options.data.adjective + ' ' + this.noun
+		n, _ := lookupProperty(o.Ctx(), "noun")
+		return jsStr(o.DataVar("adjective")) + " " + jsStr(n), nil
+	},
+	"2e84d414a45d": func(o *HelperOptions) (any, error) { return fnData(o, o.Ctx(), o.Hash) }, // createFrame(options.data) + hash; options.fn(this, {data: frame})
+	"a64f59bdf33f": func(o *HelperOptions) (any, error) { return "Hello " + jsStr(arg(o, 0)), nil },
+	"4fcdead63757": func(o *HelperOptions) (any, error) { return "Hello " + jsStr(o.Hash["noun"]), nil },
+	"76e25fcfe089": func(o *HelperOptions) (any, error) { // options.data.adjective + ' ' + noun + (this.exclaim ? '!' : '')
+		return jsStr(o.DataVar("adjective")) + " " + jsStr(arg(o, 0)) + exclaim(o, "!"), nil
+	},
+	"0d2d26aa3b1f": func(o *HelperOptions) (any, error) {
+		return jsStr(o.DataVar("adjective")) + " world" + exclaim(o, "!"), nil
+	},
+	"c24902ec9978": func(o *HelperOptions) (any, error) { return o.FnWith(map[string]any{"exclaim": "?"}) }, // options.fn({exclaim: '?'})
+	"c06549cee712": func(o *HelperOptions) (any, error) { // options.data.adjective + ' ' + thing + (this.exclaim || '')
+		e, _ := lookupProperty(o.Ctx(), "exclaim")
+		if !jsTruthy(e) {
+			e = ""
+		}
+		return jsStr(o.DataVar("adjective")) + " " + jsStr(arg(o, 0)) + jsStr(e), nil
+	},
+	"4c151124c14c": func(o *HelperOptions) (any, error) { // options.data.accessData + ' ' + options.fn({exclaim: '?'})
+		s, err := o.FnWith(map[string]any{"exclaim": "?"})
+		return jsStr(o.DataVar("accessData")) + " " + s, err
+	},
+	"3c96f81880a8": func(o *HelperOptions) (any, error) { // options.fn({exclaim: '?', zomg: 'world'}, {data: {adjective: 'sad'}})
+		return fnData(o, map[string]any{"exclaim": "?", "zomg": "world"}, map[string]any{"adjective": "sad"})
+	},
+	"d9d4ea563dd4": func(o *HelperOptions) (any, error) { // options.fn({exclaim: '?'}, {data: {adjective: 'sad'}})
+		return fnData(o, map[string]any{"exclaim": "?"}, map[string]any{"adjective": "sad"})
+	},
+	"7da82310d17e": func(o *HelperOptions) (any, error) { // frame.depth = options.data.depth + 1; options.fn(this, {data: frame})
+		d, _ := o.DataVar("depth").(float64)
+		return fnData(o, o.Ctx(), map[string]any{"depth": d + 1})
+	},
+
 	// helpers.json
 	"1547467c4929": func(o *HelperOptions) (any, error) { // function (prefix) {
 		return `<a href="` + jsStr(arg(o, 0)) + "/" + jsStr(o.Lookup("url")) + `">` + jsStr(o.Lookup("text")) + "</a>", nil
@@ -322,4 +372,19 @@ func equalsBlockParams(o *HelperOptions, n int) error {
 		return errors.New("equals: options.fn.blockParams = " + strconv.Itoa(got) + ", want " + strconv.Itoa(n))
 	}
 	return nil
+}
+
+// fnData is JS options.fn(ctx, {data: createFrame(options.data) + vars}).
+func fnData(o *HelperOptions, ctx any, vars map[string]any) (string, error) {
+	var sb strings.Builder
+	err := o.FnTo(&sb, ctx, nil, vars)
+	return sb.String(), err
+}
+
+// exclaim is (this.exclaim ? s : ”).
+func exclaim(o *HelperOptions, s string) string {
+	if e, _ := lookupProperty(o.Ctx(), "exclaim"); jsTruthy(e) {
+		return s
+	}
+	return ""
 }
