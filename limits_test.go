@@ -439,12 +439,18 @@ func TestLongNameOps(t *testing.T) {
 // copied costs an op. Uncharged, each case stays under MaxOps.
 func TestTrackIDsPathOps(t *testing.T) {
 	long := "this" + strings.Repeat("/.", 100_000) // a 200 KB id
-	for _, src := range []string{
-		"{{#with " + long + "}}{{#each a}}{{#each ../a}}x{{/each}}{{/each}}{{/with}}", // the review's probe
-		"{{#with " + long + "}}{{#each b}}x{{/each}}{{/with}}",                        // each: per item
-		"{{#with " + long + "}}{{#rep}}{{#with .}}x{{/with}}{{/rep}}{{/with}}",        // with: appendContextPath
-		"{{#with " + long + " as |w|}}{{#rep}}{{lookup w.x 1}}{{/rep}}{{/with}}",      // a block param's id
+	data := map[string]any{"a": make([]any, 250), "b": make([]any, 1000)}
+	for _, c := range []struct {
+		src  string
+		data any
+	}{
+		{"{{#with " + long + "}}{{#each a}}{{#each ../a}}x{{/each}}{{/each}}{{/with}}", data}, // the review's probe
+		{"{{#with " + long + "}}{{#each b}}x{{/each}}{{/with}}", data},                        // each: per item
+		{"{{#with " + long + "}}{{#rep}}{{#with .}}x{{/with}}{{/rep}}{{/with}}", data},        // with: appendContextPath
+		{"{{#with " + long + " as |w|}}{{#rep}}{{lookup w.x 1}}{{/rep}}{{/with}}", data},      // a block param's id
+		{"{{#rep}}{{#each " + long + "}}{{/each}}{{/rep}}", map[string]any{}},                 // each start: no contextPath, no items
 	} {
+		src := c.src
 		tpl, err := ParseWithOptions(src, Options{TrackIDs: true, Limits: Limits{MaxOps: 100_000}})
 		if err != nil {
 			t.Fatal(err)
@@ -458,7 +464,7 @@ func TestTrackIDsPathOps(t *testing.T) {
 			return nil, nil
 		})
 		err = bounded(t, func() error {
-			_, err := tpl.Render(map[string]any{"a": make([]any, 250), "b": make([]any, 1000)})
+			_, err := tpl.Render(c.data)
 			return err
 		})
 		var le *LimitError

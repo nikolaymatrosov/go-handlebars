@@ -213,7 +213,7 @@ func (r *eachRun) iter(v any, key string, idx int, arr, last bool) error {
 		} else {
 			r.path = append(r.path[:r.pathLen], key...)
 		}
-		if err := s.steps(len(r.path) >> 10); err != nil { // copied per item
+		if err := chargePath(s, r.path); err != nil { // copied per item
 			return err
 		}
 		path := string(r.path)
@@ -253,6 +253,9 @@ func eachHelper(o *HelperOptions) (any, error) {
 				return nil, err
 			}
 			r.path = append([]byte(path), '.')
+			if err := chargePath(o.s, r.path); err != nil { // copied per each call, items or not
+				return nil, err
+			}
 		}
 		r.pathLen = len(r.path)
 		if r.bp != nil {

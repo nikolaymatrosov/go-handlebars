@@ -500,21 +500,27 @@ func (s *renderState) paramID(n node) (string, error) {
 			return id, nil
 		}
 		id = strings.Join([]string{id, n.legacy}, ".")
-		return id, s.steps(len(id) >> 10) // a copy of the block param's path
+		return id, chargePath(s, id)
 	}
 	return "null", nil
 }
 
+// chargePath charges an op per KiB of a trackIds path (a contextPath or
+// id) the render has just joined or copied: ids can be as long as the
+// template and paths grow with nesting. Every join or copy of one is
+// charged here: appendContextPath, paramID, and each's start and items.
+// Storing or passing one on is free.
+func chargePath[S string | []byte](s *renderState, p S) error { return s.steps(len(p) >> 10) }
+
 // appendContextPath is utils.js appendContextPath(data.contextPath, id)
-// for the current frame. Paths grow with nesting and an id can be as long
-// as the template, so each KiB copied costs an op.
+// for the current frame.
 func (s *renderState) appendContextPath(id string) (string, error) {
 	cp, _ := s.data.get("contextPath")
 	if !jsTruthy(cp) {
 		return id, nil
 	}
 	path := strings.Join([]string{jsKey(cp), id}, ".")
-	return path, s.steps(len(path) >> 10)
+	return path, chargePath(s, path)
 }
 
 // helperThis is the JS helper call context: depth0 != null ? depth0 : nullContext.
