@@ -2,7 +2,6 @@ package handlebars
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -17,25 +16,6 @@ func init() {
 			return "", err
 		}
 		return printAST(prog), nil
-	}
-}
-
-func TestParseDepthLimit(t *testing.T) {
-	cases := map[string]string{
-		"blocks":  strings.Repeat("{{#if x}}", 2000) + strings.Repeat("{{/if}}", 2000),
-		"sexprs":  "{{foo " + strings.Repeat("(foo ", 2000) + strings.Repeat(")", 2000) + "}}",
-		"chain":   "{{#if a}}" + strings.Repeat("{{else if b}}", 2000) + "{{/if}}",
-		"partial": strings.Repeat("{{#> p}}", 2000) + strings.Repeat("{{/p}}", 2000),
-	}
-	for name, src := range cases {
-		_, err := parse(src, Options{})
-		var le *LimitError
-		if !errors.As(err, &le) || le.What != "parse depth" || le.Max != DefaultLimits.MaxParseDepth {
-			t.Errorf("%s: got %v, want parse depth LimitError", name, err)
-		}
-	}
-	if _, err := parse(strings.Repeat("{{#if x}}", 100)+strings.Repeat("{{/if}}", 100), Options{}); err != nil {
-		t.Errorf("depth 100 should parse: %v", err)
 	}
 }
 

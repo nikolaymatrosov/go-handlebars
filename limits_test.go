@@ -192,13 +192,17 @@ func TestLimitParseDepth(t *testing.T) {
 	} {
 		_, err := Parse(src)
 		var le *LimitError
-		if !errors.As(err, &le) || le.What != "parse depth" {
+		if !errors.As(err, &le) || le.What != "parse depth" || le.Max != DefaultLimits.MaxParseDepth {
 			t.Errorf("%.20s...: got %v, want parse depth LimitError", src, err)
 		}
 	}
 	// Depth is nesting, not count: siblings parse, and MaxParseDepth levels fit.
 	if _, err := Parse(strings.Repeat("{{#if x}}{{/if}}{{a (b (c))}}", 2000)); err != nil {
 		t.Errorf("siblings: %v", err)
+	}
+	d := DefaultLimits.MaxParseDepth
+	if _, err := Parse(strings.Repeat("{{#if x}}", d) + strings.Repeat("{{/if}}", d)); err != nil {
+		t.Errorf("%d nested blocks: %v", d, err)
 	}
 	for n, want := range map[int]bool{5: true, 6: false} {
 		_, err := ParseWithOptions(strings.Repeat("{{#if x}}", n)+strings.Repeat("{{/if}}", n), Options{Limits: Limits{MaxParseDepth: 5}})
