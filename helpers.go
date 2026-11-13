@@ -29,11 +29,11 @@ type HelperOptions struct {
 	Hash map[string]any // evaluated hash args; nil when the call has none
 
 	// Legacy is what StringParams or TrackIDs add (JS options.types, ids,
-	// ...) to a call that evaluates arguments: a helper with params, hash
-	// or as a subexpression, or a decorator. nil when both are off and for
-	// a bare {{name}} call.
-	// API change: new; one pointer, so HelperOptions stays as small when
-	// both options are off.
+	// ...) to a call that evaluates arguments (a helper with params or
+	// hash, a subexpression, a decorator) and, under TrackIDs, to the each
+	// call a bare block over an array makes ({{#items}}: IDs is
+	// ["items"]). nil when both options are off and for other bare
+	// {{name}} and {{#name}} calls.
 	Legacy *LegacyParams
 
 	s           *renderState
@@ -52,7 +52,6 @@ func (o *HelperOptions) argSlice(n int) []any {
 
 // LegacyParams are what the legacy compile options add to a helper's
 // options (compiler.js setupParams).
-// API change: new.
 type LegacyParams struct {
 	// Under StringParams a path argument is passed as its source string
 	// ("../a/b" as "a.b", undefined/null as ""). Types[i] is the JS AST type
@@ -81,7 +80,10 @@ func (o *HelperOptions) id0() (id string, ok bool) {
 
 // Ctx is the helper's `this`: the current context, or an empty object when
 // that is null/undefined (JS container.nullContext).
-func (o *HelperOptions) Ctx() any      { return o.this }
+func (o *HelperOptions) Ctx() any { return o.this }
+
+// IsBlock reports whether the helper was called as a block ({{#name}}),
+// so Fn or Inverse has something to render.
 func (o *HelperOptions) IsBlock() bool { return o.fn != nil || o.inverse != nil }
 
 // Fn renders the block with the helper's `this` (JS options.fn(this)).
@@ -110,7 +112,6 @@ func (o *HelperOptions) FnTo(w io.Writer, ctx any, blockParams []any, dataVars m
 // FnToPaths is FnTo plus the block params' source paths (JS
 // blockParams.path): under TrackIDs an argument rooted at block param i
 // gets paths[i] as its id ("undefined" when missing).
-// API change: new.
 func (o *HelperOptions) FnToPaths(w io.Writer, ctx any, blockParams []any, paths []string, dataVars map[string]any) error {
 	if o.s == nil {
 		return errNoRender
@@ -149,7 +150,7 @@ func (o *HelperOptions) DataVar(name string) any {
 
 // Lookup resolves a dot-separated property path ("a.b") from Ctx(), one JS
 // options.lookupProperty per part. Function values are returned, not called.
-// API change: "path" is a property chain only (no ../, this or [] segments).
+// path is a property chain only: ../, this and [] segments are not parsed.
 func (o *HelperOptions) Lookup(path string) any {
 	v := o.this
 	for {
@@ -291,9 +292,11 @@ func (s *renderState) callHook(name string, builtin Helper, o *HelperOptions) (a
 }
 
 // ErrHelperPanic is wrapped by the error a render returns when a
-// user-supplied function (a registered helper or hook, or a function value
-// in the data) panics; the error text carries the panic value and stack.
-// API change: new; library code is never recovered, so fuzzing can tell.
+// user-supplied function (a registered helper or hook, a function value in
+// the data, a function partial or the Logger) panics; the error text
+// carries the panic value and stack. Library code is never recovered, and
+// neither are panics in a KeyedCollection or the writer passed to RenderTo,
+// unless they happen while a user helper renders its block.
 var ErrHelperPanic = errors.New("handlebars: helper panicked")
 
 // call runs h, a user-supplied function, as name. A panic in it becomes an

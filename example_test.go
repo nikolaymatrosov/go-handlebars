@@ -49,7 +49,8 @@ func Example() {
 }
 
 // Templates from untrusted sources: tighten the limits you care about
-// (zero fields keep their DefaultLimits value) and render under a deadline.
+// (zero fields keep their DefaultLimits value) and render under a deadline
+// as well. Here the output limit stops the render long before the deadline.
 func Example_untrusted() {
 	opts := handlebars.Options{Limits: handlebars.Limits{MaxOutputSize: 1 << 10}}
 	tpl, err := handlebars.ParseWithOptions("{{#each rows}}{{#each @root.rows}}{{.}}{{/each}}{{/each}}", opts)

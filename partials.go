@@ -24,8 +24,10 @@ func (t *Template) RegisterPartial(name, src string) error {
 }
 
 // RegisterPartialTemplate registers p as partial name. p renders with its
-// own Options; helpers and partials come from the template being rendered.
-// A nil p unregisters name.
+// own parse-time Options (Strict, NoEscape, ...), but its Limits and Data
+// are ignored: those, like helpers and partials, come from the template
+// being rendered. A nil p unregisters name. Registration is not
+// concurrency-safe; register everything before rendering.
 func (t *Template) RegisterPartialTemplate(name string, p *Template) {
 	t.setPartial(name, partialDef{t: p}, p == nil)
 }
@@ -33,8 +35,8 @@ func (t *Template) RegisterPartialTemplate(name string, p *Template) {
 // RegisterPartialFunc registers fn as partial name, like a handlebars.js
 // function partial: fn gets the partial's context and its result is
 // written unescaped (and indented when the partial is standalone). A nil
-// fn unregisters name.
-// API change: new; the JS function's options argument is not passed.
+// fn unregisters name. Unlike JS, fn gets no options argument.
+// Registration is not concurrency-safe; register everything before rendering.
 func (t *Template) RegisterPartialFunc(name string, fn func(ctx any) (string, error)) {
 	t.setPartial(name, partialDef{fn: fn}, fn == nil)
 }

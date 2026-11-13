@@ -43,7 +43,7 @@ out, err := tpl.Render(map[string]any{
 // </ul>
 ```
 
-This is `Example` in [example_test.go](example_test.go), so `go test` keeps it compiling and checks its output. `Example_untrusted` in the same file shows limits and cancellation.
+This is `Example` in [example_test.go](example_test.go), so `go test` keeps it compiling and checks its output. `Example_untrusted` in the same file shows tightened limits, with the render under a deadline.
 
 ### API at a glance
 
@@ -71,7 +71,7 @@ This is `Example` in [example_test.go](example_test.go), so `go test` keeps it c
 - **Errors.**
   - `*Error` reports parse and runtime errors with `Line`, which is 1-based, and `Column`, which is the 0-based JavaScript column. The text reads like a handlebars.js exception, e.g. `Missing helper: "x"`.
   - `*LimitError` reports a hit limit.
-  - A panic in your code is returned as an error wrapping `ErrHelperPanic`, together with its stack. "Your code" means helpers, hooks, function values in the data, and the Logger.
+  - A panic in your code is returned as an error wrapping `ErrHelperPanic`, together with its stack. "Your code" means helpers, hooks, function values in the data, function partials, and the Logger. Panics in a `KeyedCollection` or in the writer you render to are not recovered (see [Security model](#security-model)).
 
 ## Security model
 
@@ -79,7 +79,7 @@ go-handlebars assumes the template may be hostile. The data and helpers are assu
 
 | Limit | Default | What it stops |
 | --- | --- | --- |
-| `MaxTemplateSize` | 1 MiB | Huge sources. `Parse` rejects them before scanning. `RegisterPartial` applies the same check to each partial's source. |
+| `MaxTemplateSize` | 1 MiB | Huge sources. `Parse` rejects them before scanning. `RegisterPartial` applies the same check to each partial's source. `Parse` runs in time linear in the source, so this also bounds its CPU cost. |
 | `MaxParseDepth` | 100 | Stack exhaustion while parsing, from deep nesting of blocks, subexpressions and partial blocks. Each `{{else if …}}` link in a chain counts as one level, so a chain can have at most 99 links at the default. |
 | `MaxRenderDepth` | 100 | Recursive and mutually recursive partials, including dynamic names like `{{> (lookup . 'next')}}`, and deep runtime nesting. Block scopes and partial expansions count together. |
 | `MaxOutputSize` | 8 MiB | Output amplification, such as nested `{{#each}}` "billion laughs" or a large indent applied to many lines. Every rendered byte counts. That includes the intermediate buffers a helper renders with `Fn()`/`FnWith()`/`Inverse()` and bytes it writes with `FnTo` into its own writer, even if it then discards them. |
@@ -102,11 +102,12 @@ On top of those, the render charges one op per KiB of a long name or `trackIds` 
 Further guarantees:
 
 - **Sticky limits.** Once a render exceeds a limit, it fails, even if a helper catches the `LimitError` from `Fn()` and returns normally.
-- **No library panics.** The library returns errors instead of panicking on any template, data or option combination. `FuzzParse` and `FuzzRender` in `fuzz_test.go` check this. A panic in user code becomes an `ErrHelperPanic` error.
+- **No library panics.** The library returns errors instead of panicking on any template, data or option combination. `FuzzParse` and `FuzzRender` in `fuzz_test.go` check this. A panic in your helpers, hooks, data function values, function partials or Logger becomes an `ErrHelperPanic` error. Panics in other code you supply, such as `KeyedCollection` methods or the `io.Writer` passed to `RenderTo`, are not recovered: they propagate out of the render. The exception is a panic while a user block helper renders its block, which is reported as that helper's `ErrHelperPanic`.
 - **Cancellation.** `RenderCtx` checks `ctx.Err()` before rendering starts and then every 1024 ops, and returns that error.
   - A helper that drops the context error doesn't hide the cancellation: the render sees it again at the next check.
   - Cancellation is a stop signal, not a limit, so it is not sticky. If fewer than 1024 ops remain when a helper drops the error, the render can still complete.
 - **Partial templates.** A partial registered with `RegisterPartialTemplate` renders with its own parse-time Options, such as `Strict` or `NoEscape`. `Limits` and `Data` always come from the template being rendered.
+- **Parse memory.** No limit bounds the memory `Parse` uses besides `MaxTemplateSize`: it is proportional to the source, and a 1 MiB source can allocate a few hundred MB while parsing. For example, 200,000 `{{a}}` (976 KiB) allocate about 240 MB, of which a 53 MB AST stays live with the `Template`. Lower `MaxTemplateSize` if that is too much.
 
 Known residual costs. Both depend on the shape of the data, not the template alone, and each stays within a constant factor per op:
 
@@ -168,6 +169,8 @@ go test -run TestSpec -v . | grep -E 'json:|spec total'
   - `{{log}}` writes to `Template.Logger` instead of the console.
   - Panics in user code are returned as errors (`ErrHelperPanic`).
 - **Iteration.** `{{#each}}` iterates arrays and objects only; a string or number takes `{{else}}`. Plain Go maps iterate in sorted key order; channels and iterators are not supported.
+- **Builtins used inline.** `{{each x}}`, `{{if x}}`, `{{unless x}}` and `{{with x}}` without a block render nothing. JavaScript throws a TypeError there.
+- **Output on error.** `RenderTo`, `RenderCtx` and `RenderWithData` write to the writer every 4 KiB, so when they return an error the writer may already hold part of the output. `Render` returns no output on error.
 - **Partials.**
   - Each template has one partial registry. handlebars.js's global partials and per-render partials both go there.
   - `RegisterPartialFunc` partials receive the context only, not the JavaScript `options` argument.
@@ -175,7 +178,7 @@ go test -run TestSpec -v . | grep -E 'json:|spec total'
   - `{{@partial-block}}` used as a value renders as an object.
 - **Decorators.** There is no public decorator API, since decorators are deprecated in handlebars.js 4. The built-in `{{#*inline}}` works.
 - **Errors.** `Error.Column` is the 0-based JavaScript column.
-- **Legacy options.** Under `StringParams`/`TrackIDs`, helpers get the extra data in `HelperOptions.Legacy`, and `FnToPaths` passes block-param paths. IDs are JavaScript `String(id)`: `"null"`, `"true"` or `"undefined"` for literals and subexpressions.
+- **Legacy options.** Under `StringParams`/`TrackIDs`, helpers get the extra data in `HelperOptions.Legacy`, and `FnToPaths` passes block-param paths. IDs are JavaScript `String(id)`: `"null"` for a literal, `"true"` for a subexpression and `"undefined"` for a path rooted at a block param whose path is missing.
 
 ## Performance
 

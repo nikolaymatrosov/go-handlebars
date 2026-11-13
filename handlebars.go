@@ -19,12 +19,13 @@ type Limits struct {
 	// past the first, comment, partial call, inline partial bound or
 	// scanned, decorator, and key a hash partial copies; plus one per KiB
 	// of a long name or trackIds path the render hashes or copies, and one
-	// per 8 scope entries a partial block or inline partial copies.
-	// API change: counts more than substitutions + helper calls + loop
-	// iterations, so work per op is bounded.
+	// per 8 scope entries a partial block or inline partial copies. So the
+	// work per op is bounded.
 	MaxOps int
 }
 
+// DefaultLimits are the values zero Limits fields fall back to, when
+// parsing and when rendering. They suit untrusted templates.
 var DefaultLimits = Limits{
 	MaxTemplateSize: 1 << 20, // 1 MiB
 	MaxParseDepth:   100,
@@ -67,7 +68,6 @@ func (e *LimitError) Error() string {
 // Error is a parse or runtime error with template position, like a
 // handlebars.js Exception with a loc: Line is 1-based, Column is the 0-based
 // JS column (UTF-16 units). Line 0 means no position.
-// API change: Column was documented as 1-based; it is the JS 0-based column.
 type Error struct {
 	Line, Column int
 	Message      string
@@ -93,12 +93,21 @@ type Options struct {
 	PreventIndent          bool
 	ExplicitPartialContext bool
 	NoEscape               bool
-	StringParams           bool // legacy, Phase 11
-	TrackIDs               bool // legacy, Phase 11
+	// StringParams and TrackIDs are the legacy compile options: helpers
+	// get the arguments' source strings, types and contexts, or their
+	// ids, in HelperOptions.Legacy.
+	StringParams bool
+	TrackIDs     bool
 }
 
+// Parse parses src with the default Options. See ParseWithOptions.
 func Parse(src string) (*Template, error) { return ParseWithOptions(src, Options{}) }
 
+// ParseWithOptions parses src into a Template that renders under opts. A
+// source over opts.Limits.MaxTemplateSize or nested deeper than
+// MaxParseDepth fails with a *LimitError; a syntax error, or what
+// handlebars.js reports when compiling, is an *Error. Parsing takes time
+// linear in len(src).
 func ParseWithOptions(src string, opts Options) (*Template, error) {
 	prog, err := parse(src, opts)
 	if err != nil {
@@ -107,7 +116,9 @@ func ParseWithOptions(src string, opts Options) (*Template, error) {
 	return &Template{prog: prog, opts: opts}, nil
 }
 
-// Template is a parsed template.
+// Template is a parsed template with its helpers, partials and Logger.
+// Rendering is safe for concurrent use; registering helpers or partials and
+// setting Logger are not, so do them all before the first render.
 type Template struct {
 	prog       *program
 	opts       Options
@@ -117,12 +128,15 @@ type Template struct {
 
 	// Logger receives {{log}} output: level is "debug", "info", "warn",
 	// "error" or "log" (an out-of-range numeric level). Nil discards it.
-	// args is the Logger's own copy: it may keep it.
-	// API change: new; replaces handlebars.js's console-backed logger.log.
+	// args is the Logger's own copy: it may keep it. It replaces
+	// handlebars.js's console-backed logger.log.
 	Logger func(level string, args ...any)
 }
 
-// Registration is not concurrency-safe; register everything before rendering.
+// RegisterHelper registers h as helper name. A name of a builtin (each,
+// if, unless, with, lookup, log) or of the helperMissing and
+// blockHelperMissing hooks replaces it. Registration is not
+// concurrency-safe; register everything before rendering.
 func (t *Template) RegisterHelper(name string, h Helper) {
 	if t.helpers == nil {
 		t.helpers = map[string]Helper{}
@@ -130,6 +144,7 @@ func (t *Template) RegisterHelper(name string, h Helper) {
 	t.helpers[name] = h
 }
 
+// Render renders t with data as the root context and returns the output.
 func (t *Template) Render(data any) (string, error) {
 	s := newState(t, context.Background(), nil)
 	str := ""
@@ -141,6 +156,8 @@ func (t *Template) Render(data any) (string, error) {
 	return str, err
 }
 
+// RenderTo renders t with data as the root context into w. It writes to w
+// every 4 KiB of output, so when it fails w may already hold part of it.
 func (t *Template) RenderTo(w io.Writer, data any) error {
 	return t.renderTo(context.Background(), w, data, nil)
 }
@@ -173,5 +190,5 @@ type SafeString string
 type KeyedCollection interface {
 	Keys() []string
 	Get(key string) (any, bool)
-	Len() int
+	Len() int // not called by the library; Keys() gives the length
 }
