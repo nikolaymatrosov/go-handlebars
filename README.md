@@ -3,7 +3,7 @@
 go-handlebars is a [Handlebars](https://handlebarsjs.com) template engine for Go. It renders templates the way handlebars.js 4.7.9 does and passes all 632 tests of the handlebars-spec corpus. It is built for templates written by people you don't fully trust: every render is bounded by size, depth, output and work limits. It has no dependencies outside the standard library.
 
 ```sh
-go get github.com/nikthespirit/go-handlebars
+go get github.com/nikolaymatrosov/go-handlebars
 ```
 
 It requires Go 1.22 or later.

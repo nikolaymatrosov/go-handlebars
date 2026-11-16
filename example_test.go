@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	handlebars "github.com/nikthespirit/go-handlebars"
+	handlebars "github.com/nikolaymatrosov/go-handlebars"
 )
 
 func Example() {

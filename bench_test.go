@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nikthespirit/go-handlebars/internal/benchdata"
+	"github.com/nikolaymatrosov/go-handlebars/internal/benchdata"
 )
 
 // Run: go test -bench . -benchmem -run '^$'

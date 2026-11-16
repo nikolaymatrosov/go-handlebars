@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Zero third-party dependencies.** `go.mod` lists nothing but the module itself.
-- Module path: `github.com/nikthespirit/go-handlebars`, single package `handlebars` at repo root. Internal test tooling may live in subdirs.
+- Module path: `github.com/nikolaymatrosov/go-handlebars`, single package `handlebars` at repo root. Internal test tooling may live in subdirs.
 - **Security invariants (apply to every task, not just the security phase):**
   - `Parse` rejects sources longer than `Limits.MaxTemplateSize` before scanning.
   - Parser tracks nesting depth (blocks, subexpressions, partial blocks); exceeding `Limits.MaxParseDepth` → `*LimitError`.
@@ -194,7 +194,7 @@ type KeyedCollection interface {
 - Produces: `specTest` struct, `omap` ordered map (implements `KeyedCollection`), `specFuncs map[string]any` registry, test entry points `TestSpecTokenizer`, `TestSpecParser`, `TestSpecRender`.
 - The harness is the project's test suite; later tasks only add entries to `specFuncs` and flip expected pass counts.
 
-- [x] **Step 1: `go mod init github.com/nikthespirit/go-handlebars`** (adjust path if the repo gets a different remote later).
+- [x] **Step 1: `go mod init github.com/nikolaymatrosov/go-handlebars`** (adjust path if the repo gets a different remote later).
 
 - [x] **Step 2: Write the harness.** Core pieces that must exist exactly:
 

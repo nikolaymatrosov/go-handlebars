@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/aymerick/raymond"
-	handlebars "github.com/nikthespirit/go-handlebars"
+	handlebars "github.com/nikolaymatrosov/go-handlebars"
 )
 
 // TestSpecSubset runs the handlebars-spec render tests that need no JS

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/aymerick/raymond"
-	handlebars "github.com/nikthespirit/go-handlebars"
-	"github.com/nikthespirit/go-handlebars/internal/benchdata"
+	handlebars "github.com/nikolaymatrosov/go-handlebars"
+	"github.com/nikolaymatrosov/go-handlebars/internal/benchdata"
 )
 
 type renderFunc func(data any) (string, error)

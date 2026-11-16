@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nikthespirit/go-handlebars/internal/benchdata"
+	"github.com/nikolaymatrosov/go-handlebars/internal/benchdata"
 )
 
 func mustRender(t *testing.T, opts Options, src string, data any) string {

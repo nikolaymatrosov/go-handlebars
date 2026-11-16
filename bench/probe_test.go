@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/aymerick/raymond"
-	handlebars "github.com/nikthespirit/go-handlebars"
+	handlebars "github.com/nikolaymatrosov/go-handlebars"
 )
 
 func probe(t *testing.T, env string) {
