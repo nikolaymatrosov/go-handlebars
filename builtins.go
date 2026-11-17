@@ -284,7 +284,7 @@ func eachHelper(o *HelperOptions) (any, error) {
 		}
 	}
 	if !isNull(ctx) {
-		err = forOwn(ctx, r.iter)
+		err = forOwn(o.s, ctx, r.iter)
 	}
 	if err == nil && r.n == 0 {
 		err = o.s.renderProgram(o.inverse, o.this)
@@ -295,7 +295,7 @@ func eachHelper(o *HelperOptions) (any, error) {
 // forOwn visits the own enumerable properties of ctx in JS order, as
 // {{#each}} and Utils.extend see them: array items (key "", arr true),
 // object keys (KeyedCollection order, maps sorted, struct fields).
-func forOwn(ctx any, visit func(v any, key string, idx int, arr, last bool) error) error {
+func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr, last bool) error) error {
 	switch x := ctx.(type) {
 	case []any:
 		for i, v := range x {
@@ -308,9 +308,9 @@ func forOwn(ctx any, visit func(v any, key string, idx int, arr, last bool) erro
 		}
 		return nil
 	case map[string]any:
-		return visitKeys(sortedKeys(x), func(k string) any { return x[k] }, visit)
+		return visitKeys(s, sortedKeys(x), func(k string) any { return x[k] }, visit)
 	case KeyedCollection:
-		return visitKeys(x.Keys(), func(k string) any { v, _ := x.Get(k); return v }, visit)
+		return visitKeys(s, x.Keys(), func(k string) any { v, _ := x.Get(k); return v }, visit)
 	}
 	switch rv := deref(reflect.ValueOf(ctx)); rv.Kind() {
 	case reflect.Slice, reflect.Array:
@@ -329,7 +329,7 @@ func forOwn(ctx any, visit func(v any, key string, idx int, arr, last bool) erro
 		}
 		slices.Sort(keys)
 		kt := rv.Type().Key()
-		return visitKeys(keys, func(k string) any {
+		return visitKeys(s, keys, func(k string) any {
 			if v := rv.MapIndex(reflect.ValueOf(k).Convert(kt)); v.IsValid() {
 				return v.Interface()
 			}
@@ -343,12 +343,17 @@ func forOwn(ctx any, visit func(v any, key string, idx int, arr, last bool) erro
 				names = append(names, t.Field(i).Name)
 			}
 		}
-		return visitKeys(names, func(k string) any { return rv.FieldByName(k).Interface() }, visit)
+		return visitKeys(s, names, func(k string) any { return rv.FieldByName(k).Interface() }, visit)
 	}
 	return nil
 }
 
-func visitKeys(keys []string, get func(string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
+// visitKeys charges an op per 8 keys before the first visit: the keys were
+// collected, and sorted, whether or not the loop gets past its first item.
+func visitKeys(s *renderState, keys []string, get func(string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
+	if err := s.steps(len(keys) >> 3); err != nil {
+		return err
+	}
 	for i, k := range keys {
 		if err := visit(get(k), k, i, false, i == len(keys)-1); err != nil {
 			return err

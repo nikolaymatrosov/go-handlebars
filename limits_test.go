@@ -559,6 +559,36 @@ func TestOutputSizeMaxInt(t *testing.T) {
 	}
 }
 
+// {{#each}} over a map sorts all its keys before the first item. A body
+// that fails on the first item, under a helper that drops the error, used
+// to repeat the sort for a handful of ops; collecting the keys now costs an
+// op per 8, items or not (a map, reflect map or KeyedCollection).
+func TestEachKeysOps(t *testing.T) {
+	m := map[string]any{}
+	om := &object{vals: map[string]any{}}
+	for i := range 8000 { // 1000 ops per {{#each}}
+		k := "k" + itoa(i)
+		m[k] = i
+		om.set(k, i)
+	}
+	rm := map[string]int{}
+	for k := range m {
+		rm[k] = 1
+	}
+	for name, v := range map[string]any{"map": m, "reflect map": rm, "keyed": om} {
+		tpl, err := ParseWithOptions("{{#each rows}}{{#try}}{{#each @root.m}}{{nope 1}}{{/each}}{{/try}}{{/each}}", Options{Limits: Limits{MaxOps: 5000}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tpl.RegisterHelper("try", func(o *HelperOptions) (any, error) { _, _ = o.Fn(); return nil, nil })
+		_, err = tpl.Render(map[string]any{"rows": make([]any, 10), "m": v})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%s: err = %v, want ops LimitError", name, err)
+		}
+	}
+}
+
 // Under TrackIDs, contextPath and block-param ids are copied per item and
 // per call, and one id can be as long as the template (`this/./././...`
 // drops the dots from the lookup but keeps them in the id): each KiB

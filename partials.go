@@ -317,7 +317,7 @@ func (s *renderState) partialContext(n *partialNode, ctx any) (any, error) {
 	obj := &object{vals: make(map[string]any, len(n.hash))}
 	if !isNull(pctx) {
 		i := 0
-		err := forOwn(pctx, func(v any, key string, _ int, arr, _ bool) error {
+		err := forOwn(s, pctx, func(v any, key string, _ int, arr, _ bool) error {
 			if arr {
 				key = strconv.Itoa(i)
 				i++
