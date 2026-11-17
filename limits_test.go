@@ -601,3 +601,51 @@ func TestLimitExpressions(t *testing.T) {
 		t.Errorf("partial over its budget: got %v, want expressions LimitError", err)
 	}
 }
+
+// Each limit's LimitError matches its own sentinel and no other, directly
+// and wrapped, and errors.As still finds the *LimitError.
+func TestLimitSentinels(t *testing.T) {
+	render := func(src string, l Limits, partials map[string]string) error {
+		tpl, err := ParseWithOptions(src, Options{Limits: l})
+		if err != nil {
+			return err
+		}
+		for name, p := range partials {
+			if err := tpl.RegisterPartial(name, p); err != nil {
+				return err
+			}
+		}
+		_, err = tpl.Render(nil)
+		return err
+	}
+	sentinels := []error{ErrTemplateSize, ErrParseDepth, ErrRenderDepth, ErrOutputSize, ErrOps, ErrExpressions}
+	cases := []struct {
+		what string
+		want error
+		err  error
+	}{
+		{"template size", ErrTemplateSize, render("xx", Limits{MaxTemplateSize: 1}, nil)},
+		{"parse depth", ErrParseDepth, render("{{#if a}}{{#if a}}{{/if}}{{/if}}", Limits{MaxParseDepth: 1}, nil)},
+		{"render depth", ErrRenderDepth, render("{{> a}}", Limits{MaxRenderDepth: 5}, map[string]string{"a": "{{> a}}"})},
+		{"output size", ErrOutputSize, render("xxxx", Limits{MaxOutputSize: 2}, nil)},
+		{"ops", ErrOps, render("{{a}}{{a}}{{a}}", Limits{MaxOps: 1}, nil)},
+		{"expressions", ErrExpressions, render("{{a}}{{a}}", Limits{MaxExpressions: 1}, nil)},
+	}
+	for _, c := range cases {
+		var le *LimitError
+		if !errors.As(c.err, &le) || le.What != c.what {
+			t.Errorf("%s: got %v, want a %s LimitError", c.what, c.err, c.what)
+			continue
+		}
+		for _, err := range []error{c.err, fmt.Errorf("render: %w", c.err)} {
+			for _, s := range sentinels {
+				if got := errors.Is(err, s); got != (s == c.want) {
+					t.Errorf("%s: errors.Is(%q, %q) = %v", c.what, err, s, got)
+				}
+			}
+			if le = nil; !errors.As(err, &le) || le.What != c.what {
+				t.Errorf("%s: errors.As(%q) lost the LimitError", c.what, err)
+			}
+		}
+	}
+}

@@ -3,6 +3,7 @@ package handlebars
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -73,6 +74,34 @@ type LimitError struct {
 
 func (e *LimitError) Error() string {
 	return fmt.Sprintf("handlebars: %s limit exceeded (max %d)", e.What, e.Max)
+}
+
+// Sentinels for errors.Is, one per limit: a *LimitError matches the one for
+// its What, also when wrapped.
+var (
+	ErrTemplateSize = errors.New("handlebars: template size limit exceeded")
+	ErrParseDepth   = errors.New("handlebars: parse depth limit exceeded")
+	ErrRenderDepth  = errors.New("handlebars: render depth limit exceeded")
+	ErrOutputSize   = errors.New("handlebars: output size limit exceeded")
+	ErrOps          = errors.New("handlebars: ops limit exceeded")
+	ErrExpressions  = errors.New("handlebars: expressions limit exceeded")
+)
+
+// limitSentinels maps LimitError.What to its sentinel.
+var limitSentinels = map[string]error{
+	"template size": ErrTemplateSize,
+	"parse depth":   ErrParseDepth,
+	"render depth":  ErrRenderDepth,
+	"output size":   ErrOutputSize,
+	"ops":           ErrOps,
+	"expressions":   ErrExpressions,
+}
+
+// Is reports whether target is the sentinel for e.What, e.g. ErrOps for an
+// "ops" LimitError.
+func (e *LimitError) Is(target error) bool {
+	s, ok := limitSentinels[e.What]
+	return ok && s == target
 }
 
 // Error is a parse or runtime error with template position, like a
