@@ -72,7 +72,7 @@ func TestLexLinearOnUnterminated(t *testing.T) {
 	}
 	for name, src := range cases {
 		start := time.Now()
-		lex(src, Limits{}) // result irrelevant; only the runtime matters
+		lex(src, Limits{MaxExpressions: n}) // result irrelevant; only the runtime matters
 		d := time.Since(start)
 		t.Logf("%s: %v", name, d)
 		if d > time.Second {
