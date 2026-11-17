@@ -507,3 +507,97 @@ func TestTrackIDsPathOps(t *testing.T) {
 		}
 	}
 }
+
+// MaxExpressions counts one per helper-call shape. Each row parses at its
+// count and fails below it. A limit of 0 means the default, so the lower
+// bound of a count-1 row is checked on the row repeated twice.
+func TestLimitExpressions(t *testing.T) {
+	cases := []struct {
+		src string
+		n   int
+	}{
+		{"text {{! comment }}", 0},
+		{"{{a}}", 1},
+		{"{{a b c d=e}}", 1},
+		{"{{a (b c)}}", 2},
+		{"{{#if a}}x{{else if b}}y{{else}}z{{/if}}", 2},
+		{"{{^a}}x{{/a}}", 1},
+		{"{{> p}}", 1},
+		{`{{> (lookup . "k")}}`, 2},
+		{"{{#> p}}x{{/p}}", 1},
+		{"{{{{raw}}}} {{x}} {{{{/raw}}}}", 1},
+		{"{{* deco}}", 1},
+		{`{{#*inline "n"}}{{x}}{{/inline}}`, 2},
+	}
+	parse := func(src string, max int) error {
+		_, err := ParseWithOptions(src, Options{Limits: Limits{MaxExpressions: max}})
+		return err
+	}
+	isLimit := func(err error, max int) bool {
+		var le *LimitError
+		return errors.As(err, &le) && le.What == "expressions" && le.Max == max
+	}
+	for _, c := range cases {
+		if c.n == 0 { // counts nothing: one more expression fits a limit of 1
+			if err := parse(c.src+"{{a}}", 1); err != nil {
+				t.Errorf("%q plus one expression at MaxExpressions 1: %v", c.src, err)
+			}
+			continue
+		}
+		if err := parse(c.src, c.n); err != nil {
+			t.Errorf("%q at MaxExpressions %d: %v", c.src, c.n, err)
+		}
+		if c.n > 1 {
+			if err := parse(c.src, c.n-1); !isLimit(err, c.n-1) {
+				t.Errorf("%q at MaxExpressions %d: got %v, want expressions LimitError", c.src, c.n-1, err)
+			}
+		}
+		twice := c.src + c.src
+		if err := parse(twice, 2*c.n); err != nil {
+			t.Errorf("%q at MaxExpressions %d: %v", twice, 2*c.n, err)
+		}
+		if err := parse(twice, 2*c.n-1); !isLimit(err, 2*c.n-1) {
+			t.Errorf("%q at MaxExpressions %d: got %v, want expressions LimitError", twice, 2*c.n-1, err)
+		}
+	}
+
+	// The default applies to a zero field.
+	d := DefaultLimits.MaxExpressions
+	if d != 100_000 {
+		t.Errorf("DefaultLimits.MaxExpressions = %d, want 100000", d)
+	}
+	if _, err := Parse(strings.Repeat("{{a}}", d)); err != nil {
+		t.Errorf("%d expressions: %v", d, err)
+	}
+	if _, err := Parse(strings.Repeat("{{a}}", d+1)); !isLimit(err, d) {
+		t.Errorf("%d expressions: got %v, want expressions LimitError", d+1, err)
+	}
+
+	// Lexing stops at the first expression over the limit, so a source far
+	// over it costs only its prefix. Counted after the whole source was
+	// tokenized, this allocated over 150 MB.
+	src := strings.Repeat("{{a}}", 200_000) // 977 KiB
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := ParseWithOptions(src, Options{Limits: Limits{MaxExpressions: 100}})
+	runtime.ReadMemStats(&after)
+	if !isLimit(err, 100) {
+		t.Errorf("200,000 expressions at MaxExpressions 100: got %v, want expressions LimitError", err)
+	}
+	if n := after.TotalAlloc - before.TotalAlloc; n > 1<<20 {
+		t.Errorf("parse allocated %d bytes before stopping, want under 1 MiB", n)
+	}
+
+	// RegisterPartial parses with the template's Options: each partial has
+	// its own budget.
+	tpl, err := ParseWithOptions("{{> p}}", Options{Limits: Limits{MaxExpressions: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tpl.RegisterPartial("p", "{{a}}"); err != nil {
+		t.Errorf("partial within its budget: %v", err)
+	}
+	if err := tpl.RegisterPartial("q", "{{a}}{{b}}"); !isLimit(err, 1) {
+		t.Errorf("partial over its budget: got %v, want expressions LimitError", err)
+	}
+}

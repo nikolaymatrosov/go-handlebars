@@ -103,9 +103,18 @@ func scanQuoted(s string, i int, q byte) int {
 	return -1
 }
 
+// exprOpen are the tokens that open an expression. In a valid template each
+// starts one parser.call: a mustache or decorator, a block or `{{else x}}`
+// link, a raw block, a partial or partial block, or a subexpression. lex
+// counts them against Limits.MaxExpressions.
+var exprOpen = setOf(tOPEN, tOPEN_UNESCAPED, tOPEN_BLOCK, tOPEN_INVERSE, tOPEN_INVERSE_CHAIN,
+	tOPEN_RAW_BLOCK, tOPEN_PARTIAL, tOPEN_PARTIAL_BLOCK, tOPEN_SEXPR)
+
 // lex scans src into tokens, ending with tEOF. On a lexical error it returns
 // the tokens before it (no tEOF) with the error, so the parser can report
-// earlier errors first, as the lazy JS lexer does.
+// earlier errors first, as the lazy JS lexer does. A *LimitError (template
+// size, expressions) comes with no tokens: lexing stops at the first
+// expression over Limits.MaxExpressions.
 func lex(src string, limits Limits) ([]token, error) {
 	limits = limits.withDefaults()
 	if len(src) > limits.MaxTemplateSize {
@@ -117,6 +126,7 @@ func lex(src string, limits Limits) ([]token, error) {
 		toks  []token
 		stack []lexState
 		pos   int
+		exprs int // expression-opening tokens so far
 		// incremental line/col tracking; cur is the offset line/col describe
 		cur, line, col = 0, 1, 0
 		// Jison quirk, per match: after a line break, the column stops at the
@@ -260,6 +270,11 @@ func lex(src string, limits Limits) ([]token, error) {
 				stack[len(stack)-1] = stCom
 				continue
 			default:
+				if exprOpen.has(k) {
+					if exprs++; exprs > limits.MaxExpressions {
+						return nil, &LimitError{What: "expressions", Max: limits.MaxExpressions}
+					}
+				}
 				switch k {
 				case tINVERSE, tCLOSE, tCLOSE_UNESCAPED:
 					pop()

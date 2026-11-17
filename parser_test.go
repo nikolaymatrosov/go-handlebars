@@ -99,7 +99,7 @@ func TestParseLinear(t *testing.T) {
 	}
 	for name, src := range cases {
 		start := time.Now()
-		_, err := ParseWithOptions(src, Options{Limits: Limits{MaxParseDepth: n}})
+		_, err := ParseWithOptions(src, Options{Limits: Limits{MaxParseDepth: n, MaxExpressions: n}})
 		d := time.Since(start)
 		t.Logf("%s (%d KiB): %v", name, len(src)>>10, d)
 		if err != nil || d > time.Second {

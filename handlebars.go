@@ -22,6 +22,12 @@ type Limits struct {
 	// per 8 scope entries a partial block or inline partial copies. So the
 	// work per op is bounded.
 	MaxOps int
+	// MaxExpressions bounds how many expressions Parse accepts: every
+	// mustache, block (including each `{{else x}}` link), subexpression,
+	// partial, partial block, raw block and decorator counts as one.
+	// Parsing stops at the first expression over the limit, before the
+	// rest of the source is tokenized.
+	MaxExpressions int
 }
 
 // DefaultLimits are the values zero Limits fields fall back to, when
@@ -32,6 +38,7 @@ var DefaultLimits = Limits{
 	MaxRenderDepth:  100,
 	MaxOutputSize:   8 << 20, // 8 MiB
 	MaxOps:          1_000_000,
+	MaxExpressions:  100_000,
 }
 
 // withDefaults replaces zero fields with the corresponding DefaultLimits field.
@@ -52,12 +59,15 @@ func (l Limits) withDefaults() Limits {
 	if l.MaxOps == 0 {
 		l.MaxOps = d.MaxOps
 	}
+	if l.MaxExpressions == 0 {
+		l.MaxExpressions = d.MaxExpressions
+	}
 	return l
 }
 
 // LimitError reports which limit was exceeded.
 type LimitError struct {
-	What string // "template size", "parse depth", "render depth", "output size", "ops"
+	What string // "template size", "parse depth", "render depth", "output size", "ops", "expressions"
 	Max  int
 }
 
