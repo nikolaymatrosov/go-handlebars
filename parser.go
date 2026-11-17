@@ -65,7 +65,10 @@ func setOf(ks ...tokenKind) tokSet {
 func (s tokSet) has(k tokenKind) bool { return s&(1<<k) != 0 }
 
 var (
-	stmtStart = setOf(tCOMMENT, tCONTENT, tOPEN_RAW_BLOCK, tOPEN_BLOCK, tOPEN_INVERSE,
+	// blockStart opens a block statement: {{#x}} and {{#*x}}, {{^x}},
+	// {{{{x}}}} and {{#> p}}. Options.NoBlocks rejects these.
+	blockStart = setOf(tOPEN_BLOCK, tOPEN_INVERSE, tOPEN_RAW_BLOCK, tOPEN_PARTIAL_BLOCK)
+	stmtStart  = setOf(tCOMMENT, tCONTENT, tOPEN_RAW_BLOCK, tOPEN_BLOCK, tOPEN_INVERSE,
 		tOPEN, tOPEN_UNESCAPED, tOPEN_PARTIAL, tOPEN_PARTIAL_BLOCK)
 	nameStart  = setOf(tID, tSTRING, tNUMBER, tBOOLEAN, tUNDEFINED, tNULL, tDATA)
 	paramStart = nameStart | setOf(tOPEN_SEXPR)
@@ -199,6 +202,9 @@ func (p *parser) program(end tokSet, blockParams []string) (*program, error) {
 
 func (p *parser) statement() (node, error) {
 	t := p.peek()
+	if p.opts.NoBlocks && blockStart.has(t.kind) {
+		return nil, &Error{Line: t.line, Column: t.col, Message: "Block statements are not allowed", cause: ErrBlocksNotAllowed}
+	}
 	switch t.kind {
 	case tCONTENT:
 		p.next()

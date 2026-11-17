@@ -2,6 +2,8 @@ package handlebars
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -239,4 +241,92 @@ func (pr *printer) hash(h []hashPair) string {
 		pairs[i] = kv.key + "=" + pr.accept(kv.value)
 	}
 	return "HASH{" + strings.Join(pairs, ", ") + "}"
+}
+
+// NoBlocks rejects every block statement at its opening tag; everything
+// else parses and renders as without it.
+func TestNoBlocks(t *testing.T) {
+	noBlocks := Options{NoBlocks: true}
+	rejected := []struct {
+		src       string
+		line, col int
+	}{
+		{"{{#if a}}x{{/if}}", 1, 0},
+		{"a\n  {{^a}}x{{/a}}", 2, 2},
+		{"{{x}}{{#if a}}y{{else}}z{{/if}}", 1, 5},
+		{"{{#if a}}y{{else if b}}z{{/if}}", 1, 0},
+		{"{{{{raw}}}} {{x}} {{{{/raw}}}}", 1, 0},
+		{"{{#> p}}x{{/p}}", 1, 0},
+		{`{{#*inline "n"}}{{x}}{{/inline}}`, 1, 0},
+		{"{{~#each a~}}{{/each}}", 1, 0},
+		{"ё{{> p}}{{#with a}}{{#if b}}{{/if}}{{/with}}", 1, 8}, // first block; JS column in UTF-16 units
+		{"{{#if a}}{{/if}}{{!-- never closed", 1, 0},           // parsing stops at the block
+	}
+	for _, c := range rejected {
+		_, err := ParseWithOptions(c.src, noBlocks)
+		var he *Error
+		if !errors.Is(err, ErrBlocksNotAllowed) || !errors.As(err, &he) || he.Line != c.line || he.Column != c.col {
+			t.Errorf("%q: got %v, want ErrBlocksNotAllowed at %d:%d", c.src, err, c.line, c.col)
+		}
+		if _, err := Parse(c.src); errors.Is(err, ErrBlocksNotAllowed) {
+			t.Errorf("%q without NoBlocks: %v", c.src, err)
+		}
+	}
+	if _, err := ParseWithOptions("{{#if a}}{{/if}}", noBlocks); err == nil || err.Error() != "Block statements are not allowed - 1:0" {
+		t.Errorf("error text: %v", err)
+	}
+
+	// RegisterPartial parses with the template's Options.
+	tpl, err := ParseWithOptions("{{> p}}", noBlocks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tpl.RegisterPartial("p", "{{#if a}}{{/if}}"); !errors.Is(err, ErrBlocksNotAllowed) {
+		t.Errorf("RegisterPartial: got %v, want ErrBlocksNotAllowed", err)
+	}
+
+	allowed := []string{
+		"{{x}} {{{x}}} {{&x}}",
+		"{{fmt x y k=x}}",
+		"{{fmt (fmt x) k=(fmt y)}}",
+		`{{> p}} {{> p y}} {{> p k=x}} {{> (lookup . "pn")}}`,
+		"a {{! c }} {{!-- c --}} b",
+		"{{* deco}}{{x}}",
+		`\{{x}} {{x}}`,
+	}
+	data := map[string]any{"x": "<b>", "y": 2, "pn": "p"}
+	for _, src := range allowed {
+		var outs [2]string
+		for i, opts := range []Options{{}, noBlocks} {
+			tpl, err := ParseWithOptions(src, opts)
+			if err != nil {
+				t.Fatalf("%q (NoBlocks %v): %v", src, opts.NoBlocks, err)
+			}
+			tpl.RegisterHelper("fmt", func(o *HelperOptions) (any, error) { return fmt.Sprint(o.Args, o.Hash), nil })
+			tpl.registerDecorator("deco", func(map[string]any, *HelperOptions) error { return nil })
+			if err := tpl.RegisterPartial("p", "[{{this}}{{k}}]"); err != nil {
+				t.Fatal(err)
+			}
+			if outs[i], err = tpl.Render(data); err != nil {
+				t.Fatalf("%q (NoBlocks %v): %v", src, opts.NoBlocks, err)
+			}
+		}
+		if outs[0] != outs[1] {
+			t.Errorf("%q: NoBlocks renders %q, without it %q", src, outs[1], outs[0])
+		}
+	}
+
+	// Other errors have no cause.
+	_, syntaxErr := Parse("{{foo}")
+	strict, err := ParseWithOptions("{{a}}", Options{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, renderErr := strict.Render(map[string]any{})
+	for _, err := range []error{syntaxErr, renderErr} {
+		var he *Error
+		if !errors.As(err, &he) || errors.Unwrap(err) != nil || errors.Is(err, ErrBlocksNotAllowed) {
+			t.Errorf("%v: want an *Error with no cause", err)
+		}
+	}
 }

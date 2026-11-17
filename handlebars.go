@@ -110,6 +110,7 @@ func (e *LimitError) Is(target error) bool {
 type Error struct {
 	Line, Column int
 	Message      string
+	cause        error // what Unwrap returns: ErrBlocksNotAllowed for a NoBlocks rejection, else nil
 }
 
 func (e *Error) Error() string {
@@ -118,6 +119,14 @@ func (e *Error) Error() string {
 	}
 	return e.Message
 }
+
+// Unwrap returns ErrBlocksNotAllowed for the error Options.NoBlocks makes
+// Parse return, and nil for every other Error.
+func (e *Error) Unwrap() error { return e.cause }
+
+// ErrBlocksNotAllowed is what the *Error for a block statement under
+// Options.NoBlocks wraps.
+var ErrBlocksNotAllowed = errors.New("handlebars: block statements are not allowed")
 
 // Options mirrors handlebars.js compile options plus Limits.
 type Options struct {
@@ -137,6 +146,15 @@ type Options struct {
 	// ids, in HelperOptions.Legacy.
 	StringParams bool
 	TrackIDs     bool
+
+	// NoBlocks makes Parse reject every block statement, leaving the
+	// logic-less subset: substitutions, helper calls, subexpressions,
+	// partials, comments and decorators. The error is an *Error at the
+	// first block's opening tag that wraps ErrBlocksNotAllowed.
+	// RegisterPartial parses with it too; a partial passed to
+	// RegisterPartialTemplate keeps its own Options, so parse those with
+	// NoBlocks as well.
+	NoBlocks bool
 }
 
 // Parse parses src with the default Options. See ParseWithOptions.
