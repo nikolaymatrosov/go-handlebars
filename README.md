@@ -100,7 +100,15 @@ These count one op each:
 - a decorator;
 - a key that a hash partial copies.
 
-On top of those, the render charges one op per KiB of a long name or `trackIds` path that it hashes or copies, of a string whose `length` it reads, and of two equal-length string contexts it compares when entering a block, and one op per 8 entries of scope (contexts and block params) that a partial block or inline partial copies when it is bound or run. Work per op is bounded, so `MaxOps` bounds the whole render. For scale, the benchmark's `{{#each}}` over 1000 items with three substitutions per item uses 4,002 ops, which is 0.4% of the default.
+On top of those, the render charges one op per KiB of:
+
+- a long name, `lookup` key or `trackIds` path that it hashes or copies, and in compat mode a name again for each enclosing context it searches;
+- an object key whose value `{{#each}}` or a hash partial reads;
+- a string whose `length` it reads, or that `{{log}}` parses as its level;
+- two equal-length string contexts it compares when entering a block;
+- an array or struct it copies out of a Go struct, slice or map.
+
+It also charges one op per 8 keys that `{{#each}}` or a hash partial collects, items or not, and per 8 entries of scope (contexts and block params) that a partial block or inline partial copies when it is bound or run. Work per op is bounded, so `MaxOps` bounds the whole render. For scale, the benchmark's `{{#each}}` over 1000 items with three substitutions per item uses 4,002 ops, which is 0.4% of the default.
 
 Further guarantees:
 
