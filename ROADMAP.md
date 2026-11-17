@@ -1496,7 +1496,7 @@ git commit -m "test: fuzz NoBlocks, MaxExpressions and Variables"
 
 ---
 
-### Task 19: Docs: README and `Example_untrusted`
+### Task 19: Docs: README and `Example_untrusted` ✅
 
 **Files:**
 - Modify: `example_test.go` (`Example_untrusted`)
@@ -1505,7 +1505,7 @@ git commit -m "test: fuzz NoBlocks, MaxExpressions and Variables"
 **Interfaces:**
 - Consumes: all of Tasks 14–17.
 
-- [ ] **Step 1: Rewrite `Example_untrusted`.** In `example_test.go`, replace the function and its comment with:
+- [x] **Step 1: Rewrite `Example_untrusted`.** In `example_test.go`, replace the function and its comment with:
 
 ```go
 // Templates from untrusted sources: allow only the logic-less subset,
@@ -1556,7 +1556,7 @@ func Example_untrusted() {
 Run: `go test -run Example -v . 2>&1 | grep -E '^(---|ok|FAIL)'`
 Expected: `--- PASS: Example` and `--- PASS: Example_untrusted`.
 
-- [ ] **Step 2: Measure parse memory.** Create a scratch file `zz_mem_test.go` (do not commit it):
+- [x] **Step 2: Measure parse memory.** Create a scratch file `zz_mem_test.go` (do not commit it):
 
 ```go
 package handlebars
@@ -1597,23 +1597,23 @@ func TestZZParseMem(t *testing.T) {
 Run: `go test -run TestZZParseMem -v . 2>&1 | grep zz_mem; rm zz_mem_test.go`
 Before this release the figures were: 100k `{{a}}` 115 MB alloc / 25 MB live; 1 MiB `{{a b b …}}` 241 / 76; 1 MiB `{{a k=b …}}` 281 / 42. Use the figures you measure in Step 4, rounded to two significant digits.
 
-- [ ] **Step 3: README, "API at a glance".**
+- [x] **Step 3: README, "API at a glance".**
   - In the **Parsing** bullet, after "It also carries `Limits`.", add: "`NoBlocks` makes `Parse` reject block statements (`{{#…}}`, `{{^…}}`, raw blocks, partial blocks, decorator blocks), leaving the logic-less subset."
   - After the **Partials** bullet, add a new bullet: "**Inspection.** `Variables()` returns the paths into the root context that the template reads, e.g. `[[name] [user email]]`: at the top level and inside builtin `{{#if}}`/`{{#unless}}`, plus `@root.…` anywhere. Use it to check the data before rendering. Call it after registering helpers, since a bare name that matches a helper is not a variable. It does not look into partials: call it on each partial template."
   - In the **Errors** bullet, after the `*LimitError` sub-bullet, add: "`errors.Is` tells limits apart: a `*LimitError` matches `ErrTemplateSize`, `ErrParseDepth`, `ErrRenderDepth`, `ErrOutputSize`, `ErrOps` or `ErrExpressions`. A `NoBlocks` rejection is an `*Error` whose `Unwrap` returns `ErrBlocksNotAllowed`. Every other `*Error` unwraps to nil."
   - In the **Usage** paragraph, replace "`Example_untrusted` in the same file shows tightened limits, with the render under a deadline." with "`Example_untrusted` in the same file shows a setup for untrusted templates: `NoBlocks`, tightened limits, the error sentinels, `Variables()` and a render under a deadline."
 
-- [ ] **Step 4: README, "Security model".**
+- [x] **Step 4: README, "Security model".**
   - Add a table row after `MaxParseDepth`: `| `MaxExpressions` | 100,000 | Parse memory and CPU from sources made of many expressions. Every mustache, block and `{{else x}}` link, subexpression, partial, partial block, raw block and decorator counts as one; arguments and hash pairs don't. The lexer stops at the first expression over the limit, so a source over it costs only the part before that expression. For untrusted templates, tens or hundreds is typical. |`
   - In "Further guarantees", after **Sticky limits**, add: "**Logic-less templates.** With `Options.NoBlocks`, `Parse` rejects every block statement with an `*Error` at the first block's opening tag that wraps `ErrBlocksNotAllowed`. `RegisterPartial` parses each partial with the same Options. A partial registered with `RegisterPartialTemplate` renders with its own parse-time Options, so parse such partials with `NoBlocks` as well."
   - Replace the **Parse memory** bullet with the following, using the figures from Step 2: "**Parse memory.** Parsing allocates in proportion to the source, so `MaxTemplateSize` bounds it. `MaxExpressions` bounds it further for sources made of many expressions, because lexing stops at the first expression over the limit. At the defaults, 100,000 `{{a}}` (488 KiB) allocate about <A> MB, of which a <L> MB AST stays live with the `Template`. Arguments and hash pairs are not expressions, so a single expression with many of them is bounded by `MaxTemplateSize` alone: a 1 MiB `{{a k=b k=b …}}` allocates about <H> MB. For untrusted templates, lower both limits. At `MaxTemplateSize: 64 << 10`, parsing allocates at most about <S> MB." Here `<A>`/`<L>` are the "100k {{a}}" figures, `<H>` is the larger of the two 1 MiB argument-dense allocs, and `<S>` is the "64 KiB {{a k=b ...}}" alloc. Write the numbers, not the placeholders.
 
-- [ ] **Step 5: Check.**
+- [x] **Step 5: Check.**
 
 Run: `go test ./... && grep -n "MaxExpressions\|NoBlocks\|Variables()\|ErrBlocksNotAllowed\|ErrExpressions" README.md`
 Expected: `ok`, and matches in API at a glance, the Security model table, Further guarantees and Parse memory. `grep -n '<A>\|<L>\|<H>\|<S>' README.md` prints nothing.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 git add README.md example_test.go
