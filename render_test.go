@@ -214,14 +214,25 @@ func TestRenderPointerTruthy(t *testing.T) {
 	}
 }
 
-// A section over a pointer to a slice iterates it, as over the slice.
+// A section over a pointer to a slice iterates it, as over the slice; over
+// a bool, named or behind a pointer, it keeps the context or takes else.
 func TestRenderPointerSection(t *testing.T) {
-	ab, none, arr := []string{"a", "b"}, []string{}, [2]string{"a", "b"}
+	type flag bool
+	ab, none, arr, yes, no := []string{"a", "b"}, []string{}, [2]string{"a", "b"}, true, false
 	for i, c := range []struct {
-		v    any
-		want string
-	}{{&ab, "[a][b]"}, {&none, "empty"}, {&arr, "[a][b]"}} {
-		if got := mustRender(t, Options{}, "{{#v}}[{{this}}]{{else}}empty{{/v}}", map[string]any{"v": c.v}); got != c.want {
+		v         any
+		src, want string
+	}{
+		{&ab, "{{#v}}[{{this}}]{{else}}empty{{/v}}", "[a][b]"},
+		{&none, "{{#v}}[{{this}}]{{else}}empty{{/v}}", "empty"},
+		{&arr, "{{#v}}[{{this}}]{{else}}empty{{/v}}", "[a][b]"},
+		{&yes, "{{#v}}{{x}}{{else}}no{{/v}}", "X"},
+		{&no, "{{#v}}{{x}}{{else}}no{{/v}}", "no"},
+		{flag(true), "{{#v}}{{x}}{{else}}no{{/v}}", "X"},
+		{flag(false), "{{#v}}{{x}}{{else}}no{{/v}}", "no"},
+		{(*bool)(nil), "{{#v}}{{x}}{{else}}no{{/v}}", "no"},
+	} {
+		if got := mustRender(t, Options{}, c.src, map[string]any{"v": c.v, "x": "X"}); got != c.want {
 			t.Errorf("%d: got %q, want %q", i, got, c.want)
 		}
 	}

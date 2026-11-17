@@ -605,14 +605,15 @@ func helperMissing(o *HelperOptions) (any, error) {
 // the current output and returns nil.
 func blockHelperMissing(o *HelperOptions) (any, error) {
 	s, v := o.s, o.Args[0]
+	rv := deref(reflect.ValueOf(v)) // a bool or array behind a pointer, or a named bool, is one too
 	switch {
-	case v == true:
+	case rv.Kind() == reflect.Bool && rv.Bool():
 		return nil, s.renderProgram(o.fn, o.this)
-	case v == false || isNull(v):
+	case rv.Kind() == reflect.Bool || !rv.IsValid() || isNull(v):
 		return nil, s.renderProgram(o.inverse, o.this)
 	}
 	// JS options.ids is [] here (truthy) whenever trackIds is on.
-	if rv := deref(reflect.ValueOf(v)); rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+	if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
 		if rv.Len() == 0 {
 			return nil, s.renderProgram(o.inverse, o.this)
 		}
