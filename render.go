@@ -161,6 +161,8 @@ type renderState struct {
 	limits  Limits
 	ctx     context.Context // never nil
 	done    <-chan struct{} // ctx.Done(); nil when ctx can't be cancelled
+	// ctxCheck is the op count at which step next checks ctx.
+	ctxCheck int
 
 	frames   [2]dataFrame   // the root @data frames (rootFrame)
 	rootVars map[string]any // frames[0].vars when it holds just root
@@ -315,7 +317,8 @@ func (s *renderState) step() error {
 	if s.ops > s.limits.MaxOps {
 		return &LimitError{What: "ops", Max: s.limits.MaxOps}
 	}
-	if s.done != nil && s.ops%1024 == 0 {
+	if s.done != nil && s.ops >= s.ctxCheck { // not ops%1024: bulk charges skip multiples
+		s.ctxCheck = s.ops + 1024
 		return s.ctx.Err()
 	}
 	return nil

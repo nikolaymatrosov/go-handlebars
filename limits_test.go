@@ -311,6 +311,26 @@ func TestRenderCtxCancel(t *testing.T) {
 	}
 }
 
+// Bulk charges, such as an op per KiB of a string scanned, can step over
+// every multiple of 1024. The cancel check must still come within 1024
+// ops: for one of these lengths an item costs exactly 1024.
+func TestRenderCtxCancelBulkOps(t *testing.T) {
+	big := strings.Repeat("a", 1024<<10)
+	tpl, err := Parse("{{cancel}}{{#each rows}}{{#if @root.text.length}}{{/if}}{{/each}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := 1024 - 40; k <= 1024; k++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		tpl.RegisterHelper("cancel", func(*HelperOptions) (any, error) { cancel(); return nil, nil })
+		err := tpl.RenderCtx(ctx, io.Discard, map[string]any{"rows": make([]any, 4), "text": big[:k<<10]})
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("%d KiB: err = %v, want context.Canceled", k, err)
+		}
+		cancel()
+	}
+}
+
 type helperErr struct{ msg string }
 
 func (e *helperErr) Error() string { return e.msg }
