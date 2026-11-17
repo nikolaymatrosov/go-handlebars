@@ -179,6 +179,7 @@ go test -run TestSpec -v . | grep -E 'json:|spec total'
   - Panics in user code are returned as errors (`ErrHelperPanic`).
 - **Array and struct contexts.** A Go array or struct held by value has no identity. So a block entered again on the same value, such as `{{#with this}}`, adds a depth, and `../` inside it reaches that value once more before the outer context. Pass pointers to keep JavaScript's identity semantics.
 - **Iteration.** `{{#each}}` iterates arrays and objects only; a string or number takes `{{else}}`. Plain Go maps iterate in sorted key order; channels and iterators are not supported.
+- **`Strict` with `Compat`.** A one-part path such as `{{foo}}` takes the first non-null `foo` from the enclosing contexts. It fails only if no context has `foo`. handlebars.js looks up `foo` again on the value it found, so such a path always throws there.
 - **Builtins used inline.** `{{each x}}`, `{{if x}}`, `{{unless x}}` and `{{with x}}` without a block render nothing. JavaScript throws a TypeError there.
 - **Output on error.** `RenderTo`, `RenderCtx` and `RenderWithData` write to the writer every 4 KiB, so when they return an error the writer may already hold part of the output. `Render` returns no output on error.
 - **Partials.**

@@ -663,6 +663,7 @@ func TestStrictAssumeObjectsTable(t *testing.T) {
 		return tpl
 	}
 	partial := tp("{{x}}", Options{Strict: true})
+	sc := Options{Strict: true, Compat: true}
 	cases := []struct {
 		name  string
 		tpl   *Template
@@ -675,6 +676,10 @@ func TestStrictAssumeObjectsTable(t *testing.T) {
 		{"assume typed-nil KeyedCollection", tp("{{a.b}}", Options{AssumeObjects: true}), map[string]any{"a": (*nilKC)(nil)}, "Cannot read properties of undefined (reading 'b')", true},
 		{"assume ok", tp("{{a.b}}", Options{AssumeObjects: true}), map[string]any{"a": map[string]any{}}, "", false},
 		{"strict missing @var", tp("{{@foo}}", Options{Strict: true}), map[string]any{}, `"foo" not defined in [object Object] - 1:2`, true},
+		// handlebars.js checks a one-part path again on the value compat found: always an error.
+		{"strict compat found", tp("{{foo}}|{{#with o}}{{foo}}{{/with}}", sc), map[string]any{"foo": "bar", "o": map[string]any{}}, "bar|bar", false},
+		{"strict compat null", tp("{{foo}}", sc), map[string]any{"foo": nil}, "", false},
+		{"strict compat missing", tp("{{#with o}}{{foo}}{{/with}}", sc), map[string]any{"o": map[string]any{}}, `"foo" not defined in [object Object] - 1:13`, true},
 		{"strict partial own options", func() *Template {
 			t := tp("{{> p}}", Options{})
 			t.RegisterPartialTemplate("p", partial)

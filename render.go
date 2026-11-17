@@ -631,7 +631,7 @@ func (s *renderState) lookupLoose(p *pathExpr, ctx any) any {
 		}
 		v = s.depths[i]
 	case s.opts.Compat && !p.scoped && len(parts) > 0: // depthedLookup of the first part
-		v = s.depthedLookup(parts[0])
+		v, _ = s.depthedLookup(parts[0])
 		parts = parts[1:]
 	}
 	for _, part := range parts {
@@ -646,19 +646,22 @@ func (s *renderState) lookupLoose(p *pathExpr, ctx any) any {
 // depthedLookup is runtime.js container.lookup (compat mode): the first
 // context, innermost out, that has a non-null property name. Each depth
 // past the first hashes name again: an op per KiB, unchecked like prop's
-// (the path's lookup paid for the first).
-func (s *renderState) depthedLookup(name string) any {
+// (the path's lookup paid for the first). found: some context has name,
+// if only as null.
+func (s *renderState) depthedLookup(name string) (v any, found bool) {
 	for i := len(s.depths) - 1; i >= 0; i-- {
 		if i < len(s.depths)-1 {
 			s.ops += len(name) >> 10
 		}
 		if d := s.depths[i]; jsTruthy(d) {
-			if v, _ := s.prop(d, name); !isNull(v) {
-				return v
+			w, ok := s.prop(d, name)
+			if !isNull(w) {
+				return w, true
 			}
+			found = found || ok
 		}
 	}
-	return nil
+	return nil, found
 }
 
 // lookupStrict is javascript-compiler.js strictLookup. Intermediate parts
@@ -686,7 +689,17 @@ func (s *renderState) lookupStrict(p *pathExpr, ctx any, terminal bool) (any, er
 		}
 		v = s.depths[j]
 	case s.opts.Compat && !p.scoped && len(parts) > 0:
-		v, i = s.depthedLookup(parts[0]), 1
+		var found bool
+		v, found = s.depthedLookup(parts[0])
+		i = 1
+		// JS checks parts[0] again on the value found, so a one-part path
+		// always throws; it must be in some context instead.
+		if terminal && len(parts) == 1 {
+			if !found {
+				return nil, strictErr(p, ctx, parts[0])
+			}
+			return v, nil
+		}
 	}
 	if len(parts) == 0 {
 		return v, nil
