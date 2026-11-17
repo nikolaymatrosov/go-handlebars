@@ -54,7 +54,7 @@ func (o *outWriter) writeString(s string) error {
 	if len(o.indents) > 0 {
 		appendIndented(o, s, mark+o.max-*o.emitted)
 	} else {
-		o.buf = append(o.buf, s...)
+		o.buf = appendString(o.buf, s, false, mark+o.max-*o.emitted)
 	}
 	return o.commit(mark)
 }
@@ -92,7 +92,14 @@ func appendIndented[S string | []byte](o *outWriter, s S, limit int) {
 		if nl := indexNL(s); nl >= 0 {
 			i, o.bol = nl+1, 0
 		}
-		o.buf = append(o.buf, s[:i]...)
+		n := i
+		if room := limit - len(o.buf); room < n { // a long line stops past limit too
+			n = max(room+1, 0)
+		}
+		o.buf = append(o.buf, s[:n]...)
+		if n < i {
+			return
+		}
 		s = s[i:]
 	}
 }

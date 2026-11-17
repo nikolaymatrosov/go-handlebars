@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"runtime"
 	"strings"
 	"testing"
@@ -511,6 +512,49 @@ func TestBlockContextCompareBounded(t *testing.T) {
 	}
 	if err := bounded(t, func() error { return tpl.RenderTo(io.Discard, map[string]any{"rows": rows}) }); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A long string is copied only up to the output budget, plus at most the
+// escaping of it: as a substitution past MaxOutputSize, escaped, raw, safe
+// or indented, and inside an array formatted as a lookup key (1 KiB).
+func TestLongStringCopyCapped(t *testing.T) {
+	s := strings.Repeat(`"`, 1<<20) // escapes to 6 MiB
+	data := map[string]any{"s": s, "safe": SafeString(s), "obj": map[string]any{}, "key": []any{s}}
+	for _, src := range []string{"{{s}}", "{{{s}}}", "{{safe}}", "{{lookup obj key}}", "  {{> v}}\n", "  {{> sf}}\n"} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOutputSize: 1 << 10}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tpl.RegisterPartial("v", "{{s}}"); err != nil {
+			t.Fatal(err)
+		}
+		if err := tpl.RegisterPartial("sf", "{{safe}}"); err != nil {
+			t.Fatal(err)
+		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		_ = tpl.RenderTo(io.Discard, data)
+		runtime.ReadMemStats(&after)
+		if n := after.TotalAlloc - before.TotalAlloc; n > 64<<10 {
+			t.Errorf("%q: allocated %d bytes", src, n)
+		}
+	}
+}
+
+// A math.MaxInt output budget (no practical limit) doesn't overflow the
+// output caps: every write, indented or not, still appears in full.
+func TestOutputSizeMaxInt(t *testing.T) {
+	tpl, err := ParseWithOptions("{{s}}{{{s}}}{{safe}}\n  {{> p}}\n", Options{Limits: Limits{MaxOutputSize: math.MaxInt}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tpl.RegisterPartial("p", "{{s}}{{safe}}"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := tpl.Render(map[string]any{"s": "<a>", "safe": SafeString("<b>")})
+	if want := "&lt;a&gt;<a><b>\n  &lt;a&gt;<b>"; got != want || err != nil {
+		t.Errorf("got %q, %v; want %q", got, err, want)
 	}
 }
 

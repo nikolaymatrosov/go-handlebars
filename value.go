@@ -269,10 +269,7 @@ func appendValue(dst []byte, v any, escape bool, limit int) []byte {
 	case nil:
 		return dst
 	case string:
-		if escape {
-			return appendEscaped(dst, x)
-		}
-		return append(dst, x...)
+		return appendString(dst, x, escape, limit)
 	case float64:
 		return appendJSNumber(dst, x)
 	case int:
@@ -289,10 +286,7 @@ func appendReflect(dst []byte, rv reflect.Value, escape bool, limit, depth int) 
 	}
 	switch rv.Kind() {
 	case reflect.String:
-		if escape {
-			return appendEscaped(dst, rv.String())
-		}
-		return append(dst, rv.String()...)
+		return appendString(dst, rv.String(), escape, limit)
 	case reflect.Bool:
 		return strconv.AppendBool(dst, rv.Bool())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -329,6 +323,19 @@ func appendReflect(dst []byte, rv reflect.Value, escape bool, limit, depth int) 
 		return append(dst, "[object Object]"...)
 	}
 	return dst // funcs, chans: no JS equivalent worth printing
+}
+
+// appendString appends s, HTML-escaped when escape is set, but no more of
+// it than takes dst past limit: a long string costs the output budget, not
+// its length (escaping still writes up to 6 bytes per byte it takes).
+func appendString(dst []byte, s string, escape bool, limit int) []byte {
+	if room := limit - len(dst); room < len(s) { // limit+1 could overflow
+		s = s[:max(room+1, 0)]
+	}
+	if escape {
+		return appendEscaped(dst, s)
+	}
+	return append(dst, s...)
 }
 
 // appendJSNumber appends f formatted like JS Number.prototype.toString:
