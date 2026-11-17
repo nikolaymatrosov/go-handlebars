@@ -266,7 +266,7 @@ func (s *renderState) invoke(tg target, ctx any, name string) error {
 			return err
 		}
 		outer := s.depths
-		if len(s.depths) == 0 || !sameContext(ctx, s.depths[len(s.depths)-1]) {
+		if len(s.depths) == 0 || !s.same(ctx, s.depths[len(s.depths)-1]) {
 			s.depths = append(s.depths, ctx)
 		}
 		return s.run(p, ctx, outer)

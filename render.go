@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"reflect"
 	"strings"
 	"sync"
 )
@@ -325,6 +326,28 @@ func (s *renderState) steps(n int) error {
 	return nil
 }
 
+// prop is lookupProperty plus one op per KiB of a string whose length it
+// reads: utf16Len scans the whole string. The charge is not checked here;
+// the render's next step, or its final limit check, reports an overflow.
+func (s *renderState) prop(v any, name string) (any, bool) {
+	if name == "length" {
+		if rv := deref(reflect.ValueOf(v)); rv.Kind() == reflect.String {
+			s.ops += rv.Len() >> 10
+		}
+	}
+	return lookupProperty(v, name)
+}
+
+// same is sameContext plus one op per KiB of two equal-length strings it
+// compares, unchecked like prop's charge.
+func (s *renderState) same(a, b any) bool {
+	ra, rb := reflect.ValueOf(a), reflect.ValueOf(b)
+	if ra.Kind() == reflect.String && rb.Kind() == reflect.String && ra.Len() == rb.Len() {
+		s.ops += ra.Len() >> 10
+	}
+	return sameContext(a, b)
+}
+
 // depthErr records and returns the MaxRenderDepth LimitError.
 func (s *renderState) depthErr() error {
 	s.depthHit = true
@@ -360,7 +383,7 @@ func (s *renderState) renderProgramBP(p *program, ctx any, blockParams bpFrame) 
 	if len(outer) > 0 {
 		top = outer[len(outer)-1]
 	}
-	push := !sameContext(ctx, top) && !(ctx == any(nullCtx{}) && len(outer) > 0 && isNull(top))
+	push := !s.same(ctx, top) && !(ctx == any(nullCtx{}) && len(outer) > 0 && isNull(top))
 	if push {
 		s.depths = append(s.depths, ctx)
 	}
@@ -587,7 +610,7 @@ func (s *renderState) lookupLoose(p *pathExpr, ctx any) any {
 		if v == nil {
 			return nil
 		}
-		v, _ = lookupProperty(v, part)
+		v, _ = s.prop(v, part)
 	}
 	return v
 }
@@ -597,7 +620,7 @@ func (s *renderState) lookupLoose(p *pathExpr, ctx any) any {
 func (s *renderState) depthedLookup(name string) any {
 	for i := len(s.depths) - 1; i >= 0; i-- {
 		if d := s.depths[i]; jsTruthy(d) {
-			if v, _ := lookupProperty(d, name); !isNull(v) {
+			if v, _ := s.prop(d, name); !isNull(v) {
 				return v
 			}
 		}
@@ -659,10 +682,10 @@ func (s *renderState) lookupStrict(p *pathExpr, ctx any, terminal bool) (any, er
 		if isNull(v) {
 			return nil, typeErr(parts[i])
 		}
-		v, _ = lookupProperty(v, parts[i])
+		v, _ = s.prop(v, parts[i])
 	}
 	if terminal {
-		w, ok := lookupProperty(v, parts[n])
+		w, ok := s.prop(v, parts[n])
 		if !jsTruthy(v) || !ok {
 			return nil, strictErr(p, v, parts[n])
 		}

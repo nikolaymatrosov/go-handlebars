@@ -123,7 +123,7 @@ func lookupHelper(o *HelperOptions) (any, error) {
 			field = string(appendValue(nil, k, false, 1<<10))
 		}
 	}
-	v, _ := lookupProperty(o.Args[0], field)
+	v, _ := o.s.prop(o.Args[0], field)
 	return v, nil
 }
 

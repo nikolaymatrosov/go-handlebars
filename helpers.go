@@ -158,7 +158,7 @@ func (o *HelperOptions) Lookup(path string) any {
 		if isNull(v) {
 			return nil
 		}
-		v, _ = lookupProperty(v, part)
+		v, _ = o.s.prop(v, part)
 		if !more {
 			return v
 		}

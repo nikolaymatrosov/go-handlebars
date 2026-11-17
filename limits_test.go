@@ -467,6 +467,35 @@ func TestLongNameOps(t *testing.T) {
 	}
 }
 
+// Reading a string's length scans it (UTF-16 length), and a block whose
+// context is a string compares it with the outer one: each KiB scanned or
+// compared costs an op, however the property is read or the block entered.
+func TestLongStringOps(t *testing.T) {
+	text := strings.Repeat("t", 600<<10) // 600 ops per read or compare
+	for _, c := range []struct {
+		src    string
+		compat bool // a partial gets the caller's depths, to compare with, only in compat
+	}{
+		{"{{text.length}}", false}, {"{{p.length}}", false}, {`{{lookup text "length"}}`, false}, {"{{len}}", false},
+		{"{{#with a}}{{#with ../b}}x{{/with}}{{/with}}", false}, {"{{#with a}}{{> q ../b}}{{/with}}", true},
+	} {
+		src := c.src
+		tpl, err := ParseWithOptions(src, Options{Compat: c.compat, Limits: Limits{MaxOps: 500}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tpl.RegisterHelper("len", func(o *HelperOptions) (any, error) { return o.Lookup("text.length"), nil })
+		if err := tpl.RegisterPartial("q", "x"); err != nil {
+			t.Fatal(err)
+		}
+		_, err = tpl.Render(map[string]any{"text": text, "p": &text, "a": text + "a", "b": text + "b"})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%s: err = %v, want ops LimitError", src, err)
+		}
+	}
+}
+
 // Under TrackIDs, contextPath and block-param ids are copied per item and
 // per call, and one id can be as long as the template (`this/./././...`
 // drops the dots from the lookup but keeps them in the id): each KiB
