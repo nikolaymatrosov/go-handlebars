@@ -685,6 +685,33 @@ func TestLogLevelOps(t *testing.T) {
 	}
 }
 
+// A path's segments are charged before the walk, but a copy only when it
+// is read: once a copy takes the render past MaxOps, the rest of the walk
+// is skipped, so a long path over cyclic data can't copy without bound.
+func TestPathWalkCopyBounded(t *testing.T) {
+	type node struct {
+		Kids []node
+		Blob [1 << 20]byte // 1024 ops per copy
+	}
+	kids := make([]node, 1)
+	kids[0].Kids = kids
+	tpl, err := ParseWithOptions("{{Kids"+strings.Repeat(".[0].Kids", 1000)+"}}", Options{Limits: Limits{MaxOps: 2010}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err = tpl.Render(&node{Kids: kids})
+	runtime.ReadMemStats(&after)
+	var le *LimitError
+	if !errors.As(err, &le) || le.What != "ops" {
+		t.Errorf("err = %v, want ops LimitError", err)
+	}
+	if n := after.TotalAlloc - before.TotalAlloc; n > 8<<20 {
+		t.Errorf("allocated %d bytes", n)
+	}
+}
+
 // A long level can't be a level name, so it isn't lowercased (copied) to
 // match one; levels that are names still match in any case.
 func TestLogLevelNoCopy(t *testing.T) {

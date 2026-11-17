@@ -336,8 +336,13 @@ func (s *renderState) steps(n int) error {
 // prop is lookupProperty plus one op per KiB of a string whose length it
 // reads (utf16Len scans the whole string) and of an array or struct that a
 // reflect read copies out. The charge is not checked here; the render's
-// next step, or its final limit check, reports an overflow.
+// next step, or its final limit check, reports an overflow. But once over
+// MaxOps, prop reads nothing: the render fails anyway, and the rest of a
+// path walk (whose segments were charged up front) would copy unchecked.
 func (s *renderState) prop(v any, name string) (any, bool) {
+	if s.ops > s.limits.MaxOps {
+		return nil, false
+	}
 	if name == "length" {
 		if rv := deref(reflect.ValueOf(v)); rv.Kind() == reflect.String {
 			s.ops += rv.Len() >> 10
