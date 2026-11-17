@@ -120,8 +120,12 @@ func isEmpty(v any) bool {
 
 // sameContext approximates JS `a == b` as used by wrapProgram to decide
 // whether a block context becomes a new depth: null matches null, objects
-// compare by identity, primitives by value.
+// compare by identity, primitives by value. Arrays and structs held by
+// value have no identity, and comparing their contents costs their size on
+// every block entry, so only zero-size ones (nullCtx) match.
 // ponytail: no JS cross-type coercion (1 == "1"); add it if a spec test needs it.
+// ponytail: re-entering the same array or struct value pushes a depth, so
+// ../ counts it once more than JS would; pointers keep exact identity.
 func sameContext(a, b any) bool {
 	if isNull(a) || isNull(b) {
 		return isNull(a) && isNull(b)
@@ -135,6 +139,8 @@ func sameContext(a, b any) bool {
 		return ra.Pointer() == rb.Pointer()
 	case reflect.Slice:
 		return ra.Pointer() == rb.Pointer() && ra.Len() == rb.Len()
+	case reflect.Array, reflect.Struct:
+		return ra.Type().Size() == 0
 	}
 	return ra.Comparable() && ra.Equal(rb)
 }

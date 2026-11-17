@@ -172,6 +172,7 @@ go test -run TestSpec -v . | grep -E 'json:|spec total'
   - `HelperOptions.Lookup(path)` takes a dot-separated property chain only; `../`, `this` and `[…]` are not accepted.
   - `{{log}}` writes to `Template.Logger` instead of the console.
   - Panics in user code are returned as errors (`ErrHelperPanic`).
+- **Array and struct contexts.** A Go array or struct held by value has no identity. So a block entered again on the same value, such as `{{#with this}}`, adds a depth, and `../` inside it reaches that value once more before the outer context. Pass pointers to keep JavaScript's identity semantics.
 - **Iteration.** `{{#each}}` iterates arrays and objects only; a string or number takes `{{else}}`. Plain Go maps iterate in sorted key order; channels and iterators are not supported.
 - **Builtins used inline.** `{{each x}}`, `{{if x}}`, `{{unless x}}` and `{{with x}}` without a block render nothing. JavaScript throws a TypeError there.
 - **Output on error.** `RenderTo`, `RenderCtx` and `RenderWithData` write to the writer every 4 KiB, so when they return an error the writer may already hold part of the output. `Render` returns no output on error.

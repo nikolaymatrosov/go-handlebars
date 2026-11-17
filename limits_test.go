@@ -496,6 +496,24 @@ func TestLongStringOps(t *testing.T) {
 	}
 }
 
+// Entering a block on an array or struct context doesn't compare it with
+// the outer one element by element (JS compares objects by identity, which
+// a Go value lacks): 100k entries on a 128 KiB array took minutes.
+func TestBlockContextCompareBounded(t *testing.T) {
+	var big any = [128 << 10]byte{}
+	rows := make([]any, 100_000)
+	for i := range rows {
+		rows[i] = big
+	}
+	tpl, err := Parse("{{#each rows}}{{#with this}}x{{/with}}{{/each}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bounded(t, func() error { return tpl.RenderTo(io.Discard, map[string]any{"rows": rows}) }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Under TrackIDs, contextPath and block-param ids are copied per item and
 // per call, and one id can be as long as the template (`this/./././...`
 // drops the dots from the lookup but keeps them in the id): each KiB
