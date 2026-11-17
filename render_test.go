@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -222,6 +223,32 @@ func TestRenderPointerSection(t *testing.T) {
 	}{{&ab, "[a][b]"}, {&none, "empty"}, {&arr, "[a][b]"}} {
 		if got := mustRender(t, Options{}, "{{#v}}[{{this}}]{{else}}empty{{/v}}", map[string]any{"v": c.v}); got != c.want {
 			t.Errorf("%d: got %q, want %q", i, got, c.want)
+		}
+	}
+}
+
+// Struct field lookups find what FieldByName finds: promoted fields, the
+// shallower of two, neither of two at the same depth, exported only.
+func TestStructLookupFieldByName(t *testing.T) {
+	type A struct{ X, Y, Z int }
+	type B struct{ X, Z int }
+	type C struct{ B }
+	type S struct {
+		A
+		*B
+		C
+		Y int
+		z int
+	}
+	v := S{A: A{1, 2, 3}, B: &B{4, 5}, Y: 6, z: 7}
+	for _, name := range []string{"X", "Y", "Z", "z", "A", "B", "C", "nope"} {
+		f, ok := reflect.TypeOf(v).FieldByName(name)
+		var want any
+		if ok = ok && f.IsExported(); ok {
+			want = reflect.ValueOf(v).FieldByIndex(f.Index).Interface()
+		}
+		if got, gotOK := lookupProperty(v, name); gotOK != ok || !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: got %v %v, want %v %v", name, got, gotOK, want, ok)
 		}
 	}
 }

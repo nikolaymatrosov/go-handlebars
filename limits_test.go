@@ -633,6 +633,30 @@ func TestEachWideStruct(t *testing.T) {
 	}
 }
 
+// A struct field lookup, missing or not, and {{#each}} over a struct read
+// cached fields: scanning them, unexported ones too, cost O(fields) per op.
+func TestWideStructLookup(t *testing.T) {
+	fields := make([]reflect.StructField, 20_000)
+	for i := range fields {
+		fields[i] = reflect.StructField{Name: "f" + itoa(i), PkgPath: "p", Type: reflect.TypeOf(0)}
+	}
+	fields[0] = reflect.StructField{Name: "X", Type: reflect.TypeOf(0)}
+	wide := reflect.New(reflect.StructOf(fields)).Interface()
+	for _, src := range []string{
+		"{{#each rows}}{{@root.s.missing}}{{/each}}",
+		"{{#each rows}}{{#each @root.s}}{{/each}}{{/each}}",
+	} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: 10_000_000}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := map[string]any{"rows": make([]any, 1_000_000), "s": wide}
+		if err := bounded(t, func() error { return tpl.RenderTo(io.Discard, data) }); err != nil {
+			t.Errorf("%s: err = %v", src, err)
+		}
+	}
+}
+
 // Reading an array or struct held by value out of a Go struct, slice or
 // map copies it (reflect Interface), by lookup or by each: each KiB copied
 // costs an op. A value an any already holds is handed out without a copy.

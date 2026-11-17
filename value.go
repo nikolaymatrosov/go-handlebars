@@ -4,6 +4,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"sync"
 )
 
 // Dynamic value operations: JS semantics over Go values. JS null/undefined
@@ -190,6 +191,36 @@ func deref(rv reflect.Value) reflect.Value {
 	return rv
 }
 
+// structFields is the exported fields of a struct type that lookups and
+// {{#each}} read. FieldByName scans every field, unexported ones too, on
+// each call, a cost no op count bounds; so, like encoding/json, they are
+// collected once per type.
+type structFields struct {
+	byName map[string][]int // fields FieldByName finds, promoted ones too
+	names  []string         // own fields in order: {{#each}}'s keys
+	own    []int            // field index of names[i]
+}
+
+var structCache sync.Map // reflect.Type -> *structFields
+
+func fieldsOf(t reflect.Type) *structFields {
+	if fs, ok := structCache.Load(t); ok {
+		return fs.(*structFields)
+	}
+	fs := &structFields{byName: map[string][]int{}}
+	for _, f := range reflect.VisibleFields(t) { // what FieldByName finds
+		if !f.IsExported() {
+			continue
+		}
+		fs.byName[f.Name] = f.Index
+		if len(f.Index) == 1 {
+			fs.names, fs.own = append(fs.names, f.Name), append(fs.own, f.Index[0])
+		}
+	}
+	got, _ := structCache.LoadOrStore(t, fs)
+	return got.(*structFields)
+}
+
 func lookupReflect(rv reflect.Value, name string) (any, bool) {
 	var v reflect.Value
 	switch rv.Kind() {
@@ -200,12 +231,12 @@ func lookupReflect(rv reflect.Value, name string) (any, bool) {
 		}
 		v = rv.MapIndex(reflect.ValueOf(name).Convert(kt))
 	case reflect.Struct:
-		f, ok := rv.Type().FieldByName(name)
-		if !ok || !f.IsExported() {
+		idx, ok := fieldsOf(rv.Type()).byName[name]
+		if !ok {
 			return nil, false
 		}
 		var err error
-		if v, err = rv.FieldByIndexErr(f.Index); err != nil { // nil embedded pointer
+		if v, err = rv.FieldByIndexErr(idx); err != nil { // nil embedded pointer
 			return nil, false
 		}
 	case reflect.Slice, reflect.Array:

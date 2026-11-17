@@ -349,16 +349,9 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 			return nil // deleted mid-loop by a helper: JS context[field] is undefined
 		}, visit)
 	case reflect.Struct:
-		t := rv.Type()
-		var names []string
-		var idx []int // field index of names[i]: FieldByName would scan all fields per field
-		for i := 0; i < t.NumField(); i++ {
-			if t.Field(i).IsExported() {
-				names, idx = append(names, t.Field(i).Name), append(idx, i)
-			}
-		}
-		return visitKeys(s, names, func(i int, _ string) any {
-			f := rv.Field(idx[i])
+		fs := fieldsOf(rv.Type())
+		return visitKeys(s, fs.names, func(i int, _ string) any {
+			f := rv.Field(fs.own[i])
 			s.ops += copyOps(f.Type())
 			return f.Interface()
 		}, visit)
