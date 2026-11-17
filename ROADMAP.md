@@ -641,7 +641,7 @@ These settle what the requirements leave open. Tasks implement them exactly.
 
 ---
 
-### Task 14: `Limits.MaxExpressions`, counted by the lexer
+### Task 14: `Limits.MaxExpressions`, counted by the lexer ✅
 
 **Files:**
 - Modify: `handlebars.go` (`Limits`, `DefaultLimits`, `withDefaults`, `LimitError.What` comment)
@@ -652,7 +652,7 @@ These settle what the requirements leave open. Tasks implement them exactly.
 **Interfaces:**
 - Produces: `Limits.MaxExpressions int`; `DefaultLimits.MaxExpressions == 100_000`; parse failures `&LimitError{What: "expressions", Max: n}`.
 
-- [ ] **Step 1: Write the failing test.** Append to `limits_test.go`:
+- [x] **Step 1: Write the failing test.** Append to `limits_test.go`:
 
 ```go
 // MaxExpressions counts one per helper-call shape. Each row parses at its
@@ -750,12 +750,12 @@ func TestLimitExpressions(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails.**
+- [x] **Step 2: Run it to verify it fails.**
 
 Run: `go test -run TestLimitExpressions .`
 Expected: FAIL to compile with `unknown field MaxExpressions in struct literal of type Limits`.
 
-- [ ] **Step 3: Add the limit.** In `handlebars.go`, add the field at the end of `Limits` (after `MaxOps`):
+- [x] **Step 3: Add the limit.** In `handlebars.go`, add the field at the end of `Limits` (after `MaxOps`):
 
 ```go
 	// MaxExpressions bounds how many expressions Parse accepts: every
@@ -776,7 +776,7 @@ In `DefaultLimits`, add `MaxExpressions: 100_000,` after `MaxOps`. In `withDefau
 
 In `LimitError`, change the `What` comment to `// "template size", "parse depth", "render depth", "output size", "ops", "expressions"`.
 
-- [ ] **Step 4: Count in the lexer.** In `lexer.go`, above `func lex`, add:
+- [x] **Step 4: Count in the lexer.** In `lexer.go`, above `func lex`, add:
 
 ```go
 // exprOpen are the tokens that open an expression. In a valid template each
@@ -809,16 +809,16 @@ In the `var (...)` block of `lex`, add `exprs int // expression-opening tokens s
 
 `parse` already returns a lexer `*LimitError` before parsing, so `parser.go` needs no change.
 
-- [ ] **Step 5: Keep `TestParseLinear` meaningful.** It builds about 105,000 expressions to time the parser. In `parser_test.go`, change its options to `Options{Limits: Limits{MaxParseDepth: n, MaxExpressions: n}}`.
+- [x] **Step 5: Keep `TestParseLinear` meaningful.** It builds about 105,000 expressions to time the parser. In `parser_test.go`, change its options to `Options{Limits: Limits{MaxParseDepth: n, MaxExpressions: n}}`.
 
-- [ ] **Step 6: Run the tests.**
+- [x] **Step 6: Run the tests.**
 
 Run: `go test -run 'TestLimitExpressions|TestParseLinear|TestLex' -v . 2>&1 | grep -E '^(---|ok|FAIL)'`
 Expected: every listed test is `--- PASS`.
 Run: `go test ./...`
 Expected: `ok` (spec suite 632/632).
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```bash
 gofmt -l . ; go vet ./...
