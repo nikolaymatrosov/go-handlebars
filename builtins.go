@@ -123,6 +123,9 @@ func lookupHelper(o *HelperOptions) (any, error) {
 			field = string(appendValue(nil, k, false, 1<<10))
 		}
 	}
+	if err := o.s.steps(len(field) >> 10); err != nil { // hashed by the read, even from the data
+		return nil, err
+	}
 	v, _ := o.s.prop(o.Args[0], field)
 	return v, nil
 }

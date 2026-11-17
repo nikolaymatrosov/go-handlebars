@@ -113,10 +113,7 @@ Further guarantees:
 - **Partial templates.** A partial registered with `RegisterPartialTemplate` renders with its own parse-time Options, such as `Strict` or `NoEscape`. `Limits` and `Data` always come from the template being rendered.
 - **Parse memory.** Parsing allocates in proportion to the source, so `MaxTemplateSize` bounds it. `MaxExpressions` bounds it further for sources made of many expressions, because lexing stops at the first expression over the limit. At the defaults, 100,000 `{{a}}` (488 KiB) allocate about 120 MB, of which a 25 MB AST stays live with the `Template`. Arguments, hash pairs and path segments are not expressions, so a single expression with many of them is bounded by `MaxTemplateSize` alone: a 1 MiB `{{a.a.a …}}` allocates about 300 MB. For untrusted templates, lower both limits. At `MaxTemplateSize: 64 << 10`, parsing allocates about 23 MB in the worst case we measured.
 
-Known residual costs. Both depend on the shape of the data, not the template alone, and each stays within a constant factor per op:
-
-- Formatting a deeply nested array as a key or in an error message is capped at 1 KiB of output, but 64-deep single-element arrays can still cost up to about 64k reflection steps per op. This applies to `lookup` keys and strict-mode error text.
-- A long string from the data used as a lookup key is hashed on each use. It is not charged by length; long strings from the template are.
+Known residual cost. It depends on the shape of the data, not the template alone, and stays within a constant factor per op: formatting a deeply nested array as a key or in an error message is capped at 1 KiB of output, but 64-deep single-element arrays can still cost up to about 64k reflection steps per op. This applies to `lookup` keys and strict-mode error text.
 
 The fuzzers bound each input to 2 s, so they cannot catch an amplification that stays below that under their small limits.
 

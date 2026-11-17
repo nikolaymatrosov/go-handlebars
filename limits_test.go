@@ -468,9 +468,10 @@ func TestLongNameOps(t *testing.T) {
 	}
 }
 
-// Reading a string's length scans it (UTF-16 length), and a block whose
-// context is a string compares it with the outer one: each KiB scanned or
-// compared costs an op, however the property is read or the block entered.
+// Reading a string's length scans it (UTF-16 length), a block whose
+// context is a string compares it with the outer one, and a lookup key
+// from the data is hashed: each KiB scanned, compared or hashed costs an
+// op, however the property is read or the block entered.
 func TestLongStringOps(t *testing.T) {
 	text := strings.Repeat("t", 600<<10) // 600 ops per read or compare
 	for _, c := range []struct {
@@ -478,7 +479,7 @@ func TestLongStringOps(t *testing.T) {
 		compat bool // a partial gets the caller's depths, to compare with, only in compat
 	}{
 		{"{{text.length}}", false}, {"{{p.length}}", false}, {`{{lookup text "length"}}`, false}, {"{{len}}", false},
-		{"{{#with a}}{{#with ../b}}x{{/with}}{{/with}}", false}, {"{{#with a}}{{> q ../b}}{{/with}}", true},
+		{"{{#with a}}{{#with ../b}}x{{/with}}{{/with}}", false}, {"{{#with a}}{{> q ../b}}{{/with}}", true}, {"{{lookup this text}}", false},
 	} {
 		src := c.src
 		tpl, err := ParseWithOptions(src, Options{Compat: c.compat, Limits: Limits{MaxOps: 500}})
