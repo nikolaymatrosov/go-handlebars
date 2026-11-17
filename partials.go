@@ -26,7 +26,8 @@ func (t *Template) RegisterPartial(name, src string) error {
 // RegisterPartialTemplate registers p as partial name. p renders with its
 // own parse-time Options (Strict, NoEscape, ...), but its Limits and Data
 // are ignored: those, like helpers and partials, come from the template
-// being rendered. A nil p unregisters name. Registration is not
+// being rendered. Its parse-time limits, such as MaxExpressions, and
+// NoBlocks were already applied when it was parsed. A nil p unregisters name. Registration is not
 // concurrency-safe; register everything before rendering.
 func (t *Template) RegisterPartialTemplate(name string, p *Template) {
 	t.setPartial(name, partialDef{t: p}, p == nil)

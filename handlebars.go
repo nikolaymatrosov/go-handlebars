@@ -27,7 +27,10 @@ type Limits struct {
 	// mustache, block (including each `{{else x}}` link), subexpression,
 	// partial, partial block, raw block and decorator counts as one.
 	// Parsing stops at the first expression over the limit, before the
-	// rest of the source is tokenized.
+	// rest of the source is tokenized. Counting happens while tokenizing,
+	// before the parser runs, so an expressions *LimitError is returned
+	// even when the source also has an earlier syntax error or a block
+	// rejected by NoBlocks (as with MaxTemplateSize).
 	MaxExpressions int
 }
 
@@ -161,10 +164,11 @@ type Options struct {
 func Parse(src string) (*Template, error) { return ParseWithOptions(src, Options{}) }
 
 // ParseWithOptions parses src into a Template that renders under opts. A
-// source over opts.Limits.MaxTemplateSize or nested deeper than
-// MaxParseDepth fails with a *LimitError; a syntax error, or what
-// handlebars.js reports when compiling, is an *Error. Parsing takes time
-// linear in len(src).
+// source over opts.Limits.MaxTemplateSize, with more than MaxExpressions
+// expressions, or nested deeper than MaxParseDepth fails with a
+// *LimitError; a syntax error, or what handlebars.js reports when
+// compiling, is an *Error, as is a block statement under NoBlocks (it wraps
+// ErrBlocksNotAllowed). Parsing takes time linear in len(src).
 func ParseWithOptions(src string, opts Options) (*Template, error) {
 	prog, err := parse(src, opts)
 	if err != nil {
