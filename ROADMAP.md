@@ -828,7 +828,7 @@ git commit -m "feat: Limits.MaxExpressions, counted by the lexer"
 
 ---
 
-### Task 15: Limit sentinels
+### Task 15: Limit sentinels ✅
 
 **Files:**
 - Modify: `handlebars.go`
@@ -838,7 +838,7 @@ git commit -m "feat: Limits.MaxExpressions, counted by the lexer"
 - Consumes: `Limits.MaxExpressions` and the `"expressions"` `LimitError` (Task 14).
 - Produces: `ErrTemplateSize`, `ErrParseDepth`, `ErrRenderDepth`, `ErrOutputSize`, `ErrOps`, `ErrExpressions` (`error`), and `func (e *LimitError) Is(target error) bool`.
 
-- [ ] **Step 1: Write the failing test.** Append to `limits_test.go`:
+- [x] **Step 1: Write the failing test.** Append to `limits_test.go`:
 
 ```go
 // Each limit's LimitError matches its own sentinel and no other, directly
@@ -890,12 +890,12 @@ func TestLimitSentinels(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails.**
+- [x] **Step 2: Run it to verify it fails.**
 
 Run: `go test -run TestLimitSentinels .`
 Expected: FAIL to compile with `undefined: ErrTemplateSize`.
 
-- [ ] **Step 3: Implement.** In `handlebars.go`, add `"errors"` to the imports and, after the `LimitError` type, add:
+- [x] **Step 3: Implement.** In `handlebars.go`, add `"errors"` to the imports and, after the `LimitError` type, add:
 
 ```go
 // Sentinels for errors.Is, one per limit: a *LimitError matches the one for
@@ -927,14 +927,14 @@ func (e *LimitError) Is(target error) bool {
 }
 ```
 
-- [ ] **Step 4: Run the tests.**
+- [x] **Step 4: Run the tests.**
 
 Run: `go test -run TestLimitSentinels -v . 2>&1 | grep -E '^(---|ok|FAIL)'`
 Expected: `--- PASS: TestLimitSentinels`.
 Run: `go test ./...`
 Expected: `ok`.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 gofmt -l . ; go vet ./...
