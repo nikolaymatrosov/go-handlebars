@@ -612,7 +612,7 @@ func blockHelperMissing(o *HelperOptions) (any, error) {
 		return nil, s.renderProgram(o.inverse, o.this)
 	}
 	// JS options.ids is [] here (truthy) whenever trackIds is on.
-	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+	if rv := deref(reflect.ValueOf(v)); rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
 		if rv.Len() == 0 {
 			return nil, s.renderProgram(o.inverse, o.this)
 		}

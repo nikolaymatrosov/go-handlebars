@@ -213,6 +213,19 @@ func TestRenderPointerTruthy(t *testing.T) {
 	}
 }
 
+// A section over a pointer to a slice iterates it, as over the slice.
+func TestRenderPointerSection(t *testing.T) {
+	ab, none, arr := []string{"a", "b"}, []string{}, [2]string{"a", "b"}
+	for i, c := range []struct {
+		v    any
+		want string
+	}{{&ab, "[a][b]"}, {&none, "empty"}, {&arr, "[a][b]"}} {
+		if got := mustRender(t, Options{}, "{{#v}}[{{this}}]{{else}}empty{{/v}}", map[string]any{"v": c.v}); got != c.want {
+			t.Errorf("%d: got %q, want %q", i, got, c.want)
+		}
+	}
+}
+
 func TestRenderCompatDepthed(t *testing.T) {
 	got := mustRender(t, Options{Compat: true}, "{{#o}}{{#i}}{{x.y}}{{this.x.y}}|{{/i}}{{/o}}", map[string]any{
 		"x": map[string]any{"y": "Y"}, "o": []any{map[string]any{"i": []any{1}}}})
