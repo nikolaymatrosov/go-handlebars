@@ -589,6 +589,30 @@ func TestEachKeysOps(t *testing.T) {
 	}
 }
 
+// An object key from the data is hashed again to read its value, by each
+// and by a hash partial copying the context: each KiB costs an op, like a
+// lookup key. (Maps of up to 8 keys aren't hashed, so m has more.)
+func TestLongKeyOps(t *testing.T) {
+	m := map[string]any{strings.Repeat("k", 600<<10): 1} // 600 ops per read
+	for i := range 16 {
+		m["k"+itoa(i)] = i
+	}
+	for _, src := range []string{"{{#each m}}{{/each}}", "{{> p m k=1}}"} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: 500}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tpl.RegisterPartial("p", ""); err != nil {
+			t.Fatal(err)
+		}
+		_, err = tpl.Render(map[string]any{"m": m})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%s: err = %v, want ops LimitError", src, err)
+		}
+	}
+}
+
 // Under TrackIDs, contextPath and block-param ids are copied per item and
 // per call, and one id can be as long as the template (`this/./././...`
 // drops the dots from the lookup but keeps them in the id): each KiB

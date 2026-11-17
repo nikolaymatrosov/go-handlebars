@@ -350,11 +350,15 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 
 // visitKeys charges an op per 8 keys before the first visit: the keys were
 // collected, and sorted, whether or not the loop gets past its first item.
+// Each key also costs an op per KiB, as get hashes it again.
 func visitKeys(s *renderState, keys []string, get func(string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
 	if err := s.steps(len(keys) >> 3); err != nil {
 		return err
 	}
 	for i, k := range keys {
+		if err := s.steps(len(k) >> 10); err != nil {
+			return err
+		}
 		if err := visit(get(k), k, i, false, i == len(keys)-1); err != nil {
 			return err
 		}
