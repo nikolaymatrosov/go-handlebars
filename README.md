@@ -43,11 +43,11 @@ out, err := tpl.Render(map[string]any{
 // </ul>
 ```
 
-This is `Example` in [example_test.go](example_test.go), so `go test` keeps it compiling and checks its output. `Example_untrusted` in the same file shows tightened limits, with the render under a deadline.
+This is `Example` in [example_test.go](example_test.go), so `go test` keeps it compiling and checks its output. `Example_untrusted` in the same file shows a setup for untrusted templates: `NoBlocks`, tightened limits, the error sentinels, `Variables()` and a render under a deadline.
 
 ### API at a glance
 
-- **Parsing.** `Parse(src)` and `ParseWithOptions(src, Options)`. `Options` mirrors the handlebars.js compile options: `Strict`, `AssumeObjects`, `Compat`, `Data`, `KnownHelpers`, `KnownHelpersOnly`, `IgnoreStandalone`, `PreventIndent`, `ExplicitPartialContext`, `NoEscape`, and the legacy `StringParams` and `TrackIDs`. It also carries `Limits`.
+- **Parsing.** `Parse(src)` and `ParseWithOptions(src, Options)`. `Options` mirrors the handlebars.js compile options: `Strict`, `AssumeObjects`, `Compat`, `Data`, `KnownHelpers`, `KnownHelpersOnly`, `IgnoreStandalone`, `PreventIndent`, `ExplicitPartialContext`, `NoEscape`, and the legacy `StringParams` and `TrackIDs`. It also carries `Limits`. `NoBlocks` makes `Parse` reject block statements (`{{#…}}`, `{{^…}}`, raw blocks, partial blocks, decorator blocks), leaving the logic-less subset.
 - **Rendering.**
   - `Render(data)` returns a string.
   - `RenderTo(w, data)` writes to an `io.Writer`.
@@ -67,10 +67,12 @@ This is `Example` in [example_test.go](example_test.go), so `go test` keeps it c
   - `RegisterPartialTemplate(name, *Template)` registers a template you already parsed.
   - `RegisterPartialFunc(name, func(ctx any) (string, error))` registers a partial implemented in Go.
   - Templates can also use inline partials (`{{#*inline}}`), partial blocks (`{{#> p}}…{{/p}}`, `@partial-block`) and dynamic partials (`{{> (lookup . 'kind')}}`).
+- **Inspection.** `Variables()` returns the paths into the root context that the template reads, e.g. `[[name] [user email]]`: at the top level and inside builtin `{{#if}}`/`{{#unless}}`, plus `@root.…` anywhere. Use it to check the data before rendering. Call it after registering helpers, since a bare name that matches a helper is not a variable. It does not look into partials: call it on each partial template.
 - **`{{log}}`.** Output goes to `Template.Logger func(level string, args ...any)`. When it is nil, the output is dropped.
 - **Errors.**
   - `*Error` reports parse and runtime errors with `Line`, which is 1-based, and `Column`, which is the 0-based JavaScript column. The text reads like a handlebars.js exception, e.g. `Missing helper: "x"`.
   - `*LimitError` reports a hit limit.
+  - `errors.Is` tells limits apart: a `*LimitError` matches `ErrTemplateSize`, `ErrParseDepth`, `ErrRenderDepth`, `ErrOutputSize`, `ErrOps` or `ErrExpressions`. A `NoBlocks` rejection is an `*Error` whose `Unwrap` returns `ErrBlocksNotAllowed`. Every other `*Error` unwraps to nil.
   - A panic in your code is returned as an error wrapping `ErrHelperPanic`, together with its stack. "Your code" means helpers, hooks, function values in the data, function partials, and the Logger. Panics in a `KeyedCollection` or in the writer you render to are not recovered (see [Security model](#security-model)).
 
 ## Security model
@@ -81,6 +83,7 @@ go-handlebars assumes the template may be hostile. The data and helpers are assu
 | --- | --- | --- |
 | `MaxTemplateSize` | 1 MiB | Huge sources. `Parse` rejects them before scanning. `RegisterPartial` applies the same check to each partial's source. `Parse` runs in time linear in the source, so this also bounds its CPU cost. |
 | `MaxParseDepth` | 100 | Stack exhaustion while parsing, from deep nesting of blocks, subexpressions and partial blocks. Each `{{else if …}}` link in a chain counts as one level, so a chain can have at most 99 links at the default. |
+| `MaxExpressions` | 100,000 | Parse memory and CPU from sources made of many expressions. Every mustache, block and `{{else x}}` link, subexpression, partial, partial block, raw block and decorator counts as one; arguments and hash pairs don't. The lexer stops at the first expression over the limit, so a source over it costs only the part before that expression. For untrusted templates, tens or hundreds is typical. |
 | `MaxRenderDepth` | 100 | Recursive and mutually recursive partials, including dynamic names like `{{> (lookup . 'next')}}`, and deep runtime nesting. Block scopes and partial expansions count together. |
 | `MaxOutputSize` | 8 MiB | Output amplification, such as nested `{{#each}}` "billion laughs" or a large indent applied to many lines. Every rendered byte counts. That includes the intermediate buffers a helper renders with `Fn()`/`FnWith()`/`Inverse()` and bytes it writes with `FnTo` into its own writer, even if it then discards them. |
 | `MaxOps` | 1,000,000 | CPU exhaustion. See the list below. |
@@ -102,12 +105,13 @@ On top of those, the render charges one op per KiB of a long name or `trackIds` 
 Further guarantees:
 
 - **Sticky limits.** Once a render exceeds a limit, it fails, even if a helper catches the `LimitError` from `Fn()` and returns normally.
+- **Logic-less templates.** With `Options.NoBlocks`, `Parse` rejects every block statement with an `*Error` at the first block's opening tag that wraps `ErrBlocksNotAllowed`. `RegisterPartial` parses each partial with the same Options. A partial registered with `RegisterPartialTemplate` renders with its own parse-time Options, so parse such partials with `NoBlocks` as well.
 - **No library panics.** The library returns errors instead of panicking on any template, data or option combination. `FuzzParse` and `FuzzRender` in `fuzz_test.go` check this. A panic in your helpers, hooks, data function values, function partials or Logger becomes an `ErrHelperPanic` error. Panics in other code you supply, such as `KeyedCollection` methods or the `io.Writer` passed to `RenderTo`, are not recovered: they propagate out of the render. The exception is a panic while a user block helper renders its block, which is reported as that helper's `ErrHelperPanic`.
 - **Cancellation.** `RenderCtx` checks `ctx.Err()` before rendering starts and then every 1024 ops, and returns that error.
   - A helper that drops the context error doesn't hide the cancellation: the render sees it again at the next check.
   - Cancellation is a stop signal, not a limit, so it is not sticky. If fewer than 1024 ops remain when a helper drops the error, the render can still complete.
 - **Partial templates.** A partial registered with `RegisterPartialTemplate` renders with its own parse-time Options, such as `Strict` or `NoEscape`. `Limits` and `Data` always come from the template being rendered.
-- **Parse memory.** No limit bounds the memory `Parse` uses besides `MaxTemplateSize`: it is proportional to the source, and a 1 MiB source can allocate a few hundred MB while parsing. For example, 200,000 `{{a}}` (976 KiB) allocate about 240 MB, of which a 53 MB AST stays live with the `Template`. Lower `MaxTemplateSize` if that is too much.
+- **Parse memory.** Parsing allocates in proportion to the source, so `MaxTemplateSize` bounds it. `MaxExpressions` bounds it further for sources made of many expressions, because lexing stops at the first expression over the limit. At the defaults, 100,000 `{{a}}` (488 KiB) allocate about 120 MB, of which a 25 MB AST stays live with the `Template`. Arguments and hash pairs are not expressions, so a single expression with many of them is bounded by `MaxTemplateSize` alone: a 1 MiB `{{a k=b k=b …}}` allocates about 280 MB. For untrusted templates, lower both limits. At `MaxTemplateSize: 64 << 10`, parsing allocates at most about 17 MB.
 
 Known residual costs. Both depend on the shape of the data, not the template alone, and each stays within a constant factor per op:
 

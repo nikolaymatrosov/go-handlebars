@@ -48,28 +48,46 @@ func Example() {
 	// </ul>
 }
 
-// Templates from untrusted sources: tighten the limits you care about
-// (zero fields keep their DefaultLimits value) and render under a deadline
-// as well. Here the output limit stops the render long before the deadline.
+// Templates from untrusted sources: allow only the logic-less subset,
+// tighten the limits you care about (zero fields keep their DefaultLimits
+// value), check the data a template needs before rendering it, and render
+// under a deadline as well. Here the output limit stops the render.
 func Example_untrusted() {
-	opts := handlebars.Options{Limits: handlebars.Limits{MaxOutputSize: 1 << 10}}
-	tpl, err := handlebars.ParseWithOptions("{{#each rows}}{{#each @root.rows}}{{.}}{{/each}}{{/each}}", opts)
+	opts := handlebars.Options{
+		NoBlocks: true,
+		Limits:   handlebars.Limits{MaxExpressions: 100, MaxOutputSize: 1 << 10},
+	}
+	for _, src := range []string{"{{#each rows}}{{.}}{{/each}}", strings.Repeat("{{x}}", 101)} {
+		_, err := handlebars.ParseWithOptions(src, opts)
+		switch {
+		case errors.Is(err, handlebars.ErrBlocksNotAllowed):
+			fmt.Println("unsupported:", err)
+		case errors.Is(err, handlebars.ErrExpressions):
+			fmt.Println("too complex:", err)
+		}
+	}
+
+	tpl, err := handlebars.ParseWithOptions("Hi {{name}}! {{repeat motto times=n}}", opts)
 	if err != nil {
 		panic(err)
 	}
-	rows := make([]any, 100)
-	for i := range rows {
-		rows[i] = "0123456789"
-	}
+	tpl.RegisterHelper("repeat", func(o *handlebars.HelperOptions) (any, error) {
+		n, _ := o.Hash["times"].(int)
+		return strings.Repeat(fmt.Sprint(o.Args[0]), n), nil
+	})
+	fmt.Println("needs:", tpl.Variables())
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	err = tpl.RenderCtx(ctx, io.Discard, map[string]any{"rows": rows})
+	err = tpl.RenderCtx(ctx, io.Discard, map[string]any{"name": "Ann", "motto": "0123456789", "n": 200})
 
 	var le *handlebars.LimitError
-	if errors.As(err, &le) {
+	if errors.Is(err, handlebars.ErrOutputSize) && errors.As(err, &le) {
 		fmt.Println(le.What, "limit exceeded, max", le.Max)
 	}
 	// Output:
+	// unsupported: Block statements are not allowed - 1:0
+	// too complex: handlebars: expressions limit exceeded (max 100)
+	// needs: [[name] [motto] [n]]
 	// output size limit exceeded, max 1024
 }
