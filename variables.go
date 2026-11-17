@@ -11,10 +11,12 @@ import (
 // that matches a helper is a helper call, not a variable.
 //
 // Paths count where they render against the root context: the top level
-// and, recursively, both branches and {{else if}} chains of the builtin if
-// and unless, unless a helper of that name is registered. The bodies of
-// other blocks, inline partials and partial blocks are skipped, except that
-// @root.x is reported as x wherever it appears. A callee is a helper, not a
+// and, recursively, both branches of the builtin if and unless and the
+// inverse ({{else}}, {{else if}} chains, {{^x}}) of the builtin each and
+// with and of sections ({{#items}} on a variable), unless a helper of that
+// name (for sections, a blockHelperMissing hook) is registered. Other
+// block bodies, inline partials and partial blocks are skipped, except
+// that @root.x is reported as x wherever it appears. A callee is a helper, not a
 // variable, only when it is a bare name (one segment, no this, ./ or @) and
 // the call has arguments or a hash, is a subexpression, or names a builtin,
 // a KnownHelpers entry set to true or a helper registered on t. Literals,
@@ -50,13 +52,17 @@ func (v *varWalker) program(p *program, root bool) {
 			v.call(&n.call, root && !n.decorator, false)
 		case *blockNode:
 			v.call(&n.call, root && !n.decorator, false)
-			inner := root && !n.decorator && v.ifBlock(n.path)
-			first, second := n.program, n.inverse
-			if n.inverted {
-				first, second = second, first
+			var fn, inv bool // program and inverse render against the root context
+			if root && !n.decorator {
+				fn, inv = v.blockScope(&n.call)
 			}
-			v.program(first, inner)
-			v.program(second, inner)
+			if n.inverted { // the parser swapped them: the inverse comes first in the source
+				v.program(n.inverse, inv)
+				v.program(n.program, fn)
+			} else {
+				v.program(n.program, fn)
+				v.program(n.inverse, inv)
+			}
 		case *partialNode:
 			if s, ok := n.name.(*subExpr); ok {
 				v.call(&s.call, root, true)
@@ -100,19 +106,37 @@ func (v *varWalker) helperRef(p *pathExpr, c *call, sub bool) bool {
 		return false
 	}
 	name := p.parts[0]
-	_, registered := v.t.helpers[name]
-	return sub || len(c.params) > 0 || c.hash != nil || isBuiltin(name) || v.t.opts.KnownHelpers[name] || registered
+	return sub || len(c.params) > 0 || c.hash != nil || isBuiltin(name) || v.t.opts.KnownHelpers[name] || v.registered(name)
 }
 
-// ifBlock reports whether a block calling path renders its bodies against
-// the current context: the builtin if or unless, not replaced by a helper.
-func (v *varWalker) ifBlock(path node) bool {
-	p, ok := path.(*pathExpr)
-	if !ok || !bareName(p) || p.bp || p.parts[0] != "if" && p.parts[0] != "unless" {
-		return false
+// blockScope reports whether a block calling c renders its program and its
+// inverse against the current context. The builtin if and unless render
+// both there; the builtin each and with, and a section (a block on a
+// variable, which the blockHelperMissing hook renders), only the inverse.
+// A helper registered under that name, or as blockHelperMissing, could
+// render either against anything.
+func (v *varWalker) blockScope(c *call) (fn, inverse bool) {
+	p, ok := c.path.(*pathExpr)
+	if !ok {
+		return false, false
 	}
-	_, registered := v.t.helpers[p.parts[0]]
-	return !registered
+	if bareName(p) && !p.bp {
+		switch name := p.parts[0]; {
+		case v.registered(name):
+			return false, false
+		case name == "if" || name == "unless":
+			return true, true
+		case name == "each" || name == "with":
+			return false, true
+		}
+	}
+	section := len(c.params) == 0 && c.hash == nil && !v.helperRef(p, c, false)
+	return false, section && !v.registered("blockHelperMissing")
+}
+
+func (v *varWalker) registered(name string) bool {
+	_, ok := v.t.helpers[name]
+	return ok
 }
 
 // bareName reports whether p is one plain segment: no @, ../, this or ./.

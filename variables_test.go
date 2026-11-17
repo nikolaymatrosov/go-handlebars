@@ -46,7 +46,24 @@ func TestVariables(t *testing.T) {
 		{src: "{{^if ok}}{{a}}{{else}}{{b}}{{/if}}", want: [][]string{{"ok"}, {"a"}, {"b"}}}, // 7
 		{src: "{{#unless no}}{{a}}{{/unless}}", want: [][]string{{"no"}, {"a"}}},
 		{src: "{{#if a}}{{#each xs}}{{y}}{{/each}}{{/if}}", want: [][]string{{"a"}, {"xs"}}},
-		{src: "{{#with u}}{{else if b}}{{c}}{{/with}}", want: [][]string{{"u"}}}, // 8
+		{src: "{{#with u}}{{else if b}}{{c}}{{/with}}", want: [][]string{{"u"}, {"b"}, {"c"}}}, // 8, amended in v0.2.1
+
+		// v0.2.1: each, with and sections render their inverse against the current context.
+		{src: "{{#each xs}}{{y}}{{else}}{{b}}{{/each}}", want: [][]string{{"xs"}, {"b"}}},
+		{src: "{{#with u}}{{x}}{{else}}{{b}}{{/with}}", want: [][]string{{"u"}, {"b"}}},
+		{src: "{{#each xs}}{{else if b}}{{c}}{{/each}}", want: [][]string{{"xs"}, {"b"}, {"c"}}},
+		{src: "{{^each xs}}{{a}}{{else}}{{b}}{{/each}}", want: [][]string{{"xs"}, {"a"}}}, // inverted: a is the inverse
+		{src: "{{#each xs}}{{else}}{{b}}{{/each}}", helpers: []string{"each"}, want: [][]string{{"xs"}}},
+		{src: "{{#items}}{{name}}{{else}}{{hint}}{{/items}}", want: [][]string{{"items"}, {"hint"}}},
+		{src: "{{^items}}{{hint}}{{/items}}", want: [][]string{{"items"}, {"hint"}}},
+		{src: "{{#a.b}}{{else}}{{c}}{{/a.b}}", want: [][]string{{"a", "b"}, {"c"}}},
+		{src: "{{#items}}{{else}}{{hint}}{{/items}}", helpers: []string{"items"}, want: nil},
+		{src: "{{#items}}{{else}}{{hint}}{{/items}}", helpers: []string{"blockHelperMissing"}, want: [][]string{{"items"}}},
+		{src: "{{#this.f x}}{{else}}{{y}}{{/this.f}}", want: [][]string{{"f"}, {"x"}}}, // a call, not a section
+		{src: "{{#items x}}{{else}}{{y}}{{/items}}", want: [][]string{{"x"}}},          // a helper call
+		{src: "{{#items}}{{else}}{{y}}{{/items}}", known: map[string]bool{"items": true}, want: nil},
+		{src: "{{^items}}{{a}}{{else}}{{b}}{{/items}}", want: [][]string{{"items"}, {"a"}}}, // inverted: a is the inverse
+		{src: "{{#each xs}}{{#each ys}}{{else}}{{z}}{{/each}}{{/each}}", want: [][]string{{"xs"}}},
 		{src: "{{#if ok as |b|}}{{b}}{{/if}}", want: [][]string{{"ok"}}},
 		{src: "{{a.[b.c]}} {{a.b.c}}", want: [][]string{{"a", "b.c"}, {"a", "b", "c"}}},
 		{src: `{{#> layout user t=title}}{{body}}{{/layout}} {{@root}} {{"lit"}} {{> p}}`, want: [][]string{{"user"}, {"title"}}},

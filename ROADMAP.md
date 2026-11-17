@@ -617,7 +617,7 @@ These settle what the requirements leave open. Tasks implement them exactly.
 5. **A `@root.x` callee counts**, e.g. `{{@root.f x}}` gives `[[f] [x]]`, because it reads data.
 6. **`KnownHelpers` makes a name a helper only when its value is `true`.** A builtin name stays a helper even when `KnownHelpers` maps it to `false`.
 7. **Source order for `{{^x}}A{{else}}B{{/x}}`.** The parser swaps `program` and `inverse` for inverted blocks, so `blockNode` gets an `inverted` flag and the walk visits `inverse` first when it is set.
-8. **Root scope is only the top level and builtin `if`/`unless` bodies**, both branches and `{{else if}}` chains included. A `{{#with}}`'s `{{else}}` is not root scope.
+8. **Root scope is only the top level and builtin `if`/`unless` bodies**, both branches and `{{else if}}` chains included. A `{{#with}}`'s `{{else}}` is not root scope. *Amended in v0.2.1:* the inverse (`{{else}}`, `{{else if}}`, `{{^x}}`) of the builtin `each` and `with` and of sections (blocks on a variable, rendered by `blockHelperMissing`) is root scope too, since they render it against the current context.
 9. **`NoBlocks` error text:** `Message: "Block statements are not allowed"`, so `Error()` is `Block statements are not allowed - L:C`.
 10. **Fuzzing:** `fuzzOptions` bit 11 sets `NoBlocks` and bit 12 sets `MaxExpressions: 16`, both used by `FuzzParse`. `FuzzRender` keeps its fixed templates, which contain blocks.
 11. **Release** is full: fast-forward `main`, annotated tag `v0.2.0` with the release notes, push `main` and the tag, then `gh release create`. The notes cover the new `MaxExpressions` default and the new unexported `Error` field, which breaks unkeyed `handlebars.Error{…}` literals outside the package.
