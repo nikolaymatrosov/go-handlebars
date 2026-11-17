@@ -667,6 +667,24 @@ func TestCompositeCopyOps(t *testing.T) {
 	}
 }
 
+// A {{log}} level string is lowercased, trimmed and parsed: one from the
+// data, as a hash argument or @level, costs an op per KiB.
+func TestLogLevelOps(t *testing.T) {
+	big := strings.Repeat("W", 600<<10) // 600 ops per call
+	for _, src := range []string{"{{log 1 level=big}}", "{{log 1}}"} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: 500}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tpl.Logger = func(string, ...any) {}
+		err = tpl.RenderWithData(io.Discard, map[string]any{"big": big}, map[string]any{"level": big})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%s: err = %v, want ops LimitError", src, err)
+		}
+	}
+}
+
 // Under TrackIDs, contextPath and block-param ids are copied per item and
 // per call, and one id can be as long as the template (`this/./././...`
 // drops the dots from the lookup but keeps them in the id): each KiB

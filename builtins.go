@@ -144,6 +144,11 @@ func logHelper(o *HelperOptions) (any, error) {
 			lv = 1
 		}
 	}
+	if str, ok := lv.(string); ok { // logLevel lowercases, trims and parses it
+		if err := o.s.steps(len(str) >> 10); err != nil {
+			return nil, err
+		}
+	}
 	level, ok := logLevel(lv)
 	if !ok || level < 1 { // NaN, or below the default threshold "info"
 		return nil, nil
