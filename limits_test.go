@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -610,6 +611,25 @@ func TestLongKeyOps(t *testing.T) {
 		if !errors.As(err, &le) || le.What != "ops" {
 			t.Errorf("%s: err = %v, want ops LimitError", src, err)
 		}
+	}
+}
+
+// {{#each}} over a struct reads each field by index: by name, every field
+// scanned the field list, so a wide struct cost O(fields) per op.
+func TestEachWideStruct(t *testing.T) {
+	fields := make([]reflect.StructField, 20_000)
+	for i := range fields {
+		fields[i] = reflect.StructField{Name: "F" + itoa(i), Type: reflect.TypeOf(0)}
+	}
+	wide := reflect.New(reflect.StructOf(fields)).Elem().Interface()
+	tpl, err := Parse("{{#each rows}}{{#each @root.s}}{{/each}}{{/each}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = bounded(t, func() error { return tpl.RenderTo(io.Discard, map[string]any{"rows": make([]any, 100), "s": wide}) })
+	var le *LimitError
+	if !errors.As(err, &le) || le.What != "ops" {
+		t.Errorf("err = %v, want ops LimitError", err)
 	}
 }
 

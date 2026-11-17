@@ -308,9 +308,9 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 		}
 		return nil
 	case map[string]any:
-		return visitKeys(s, sortedKeys(x), func(k string) any { return x[k] }, visit)
+		return visitKeys(s, sortedKeys(x), func(_ int, k string) any { return x[k] }, visit)
 	case KeyedCollection:
-		return visitKeys(s, x.Keys(), func(k string) any { v, _ := x.Get(k); return v }, visit)
+		return visitKeys(s, x.Keys(), func(_ int, k string) any { v, _ := x.Get(k); return v }, visit)
 	}
 	switch rv := deref(reflect.ValueOf(ctx)); rv.Kind() {
 	case reflect.Slice, reflect.Array:
@@ -329,7 +329,7 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 		}
 		slices.Sort(keys)
 		kt := rv.Type().Key()
-		return visitKeys(s, keys, func(k string) any {
+		return visitKeys(s, keys, func(_ int, k string) any {
 			if v := rv.MapIndex(reflect.ValueOf(k).Convert(kt)); v.IsValid() {
 				return v.Interface()
 			}
@@ -338,12 +338,13 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 	case reflect.Struct:
 		t := rv.Type()
 		var names []string
+		var idx []int // field index of names[i]: FieldByName would scan all fields per field
 		for i := 0; i < t.NumField(); i++ {
 			if t.Field(i).IsExported() {
-				names = append(names, t.Field(i).Name)
+				names, idx = append(names, t.Field(i).Name), append(idx, i)
 			}
 		}
-		return visitKeys(s, names, func(k string) any { return rv.FieldByName(k).Interface() }, visit)
+		return visitKeys(s, names, func(i int, _ string) any { return rv.Field(idx[i]).Interface() }, visit)
 	}
 	return nil
 }
@@ -351,7 +352,7 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 // visitKeys charges an op per 8 keys before the first visit: the keys were
 // collected, and sorted, whether or not the loop gets past its first item.
 // Each key also costs an op per KiB, as get hashes it again.
-func visitKeys(s *renderState, keys []string, get func(string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
+func visitKeys(s *renderState, keys []string, get func(i int, k string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
 	if err := s.steps(len(keys) >> 3); err != nil {
 		return err
 	}
@@ -359,7 +360,7 @@ func visitKeys(s *renderState, keys []string, get func(string) any, visit func(v
 		if err := s.steps(len(k) >> 10); err != nil {
 			return err
 		}
-		if err := visit(get(k), k, i, false, i == len(keys)-1); err != nil {
+		if err := visit(get(i, k), k, i, false, i == len(keys)-1); err != nil {
 			return err
 		}
 	}
