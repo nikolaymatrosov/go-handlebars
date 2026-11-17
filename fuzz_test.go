@@ -3,12 +3,13 @@ package handlebars
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
 
-// Fuzz invariants: Parse and Render never panic (library panics propagate
+// Fuzz invariants: Parse and Render never panic (nor does Variables, which returns no empty or duplicate path) (library panics propagate
 // raw, so the fuzzer sees them), stay within their limits, finish fast,
 // and fail only with a template *Error or a *LimitError. No user helpers
 // are registered, so an ErrHelperPanic is a library bug too.
@@ -20,9 +21,12 @@ func fuzzOptions(bits uint16) Options {
 	b := func(i int) bool { return bits&(1<<i) != 0 }
 	o := Options{Limits: fuzzLimits, Strict: b(0), AssumeObjects: b(1), Compat: b(2), KnownHelpersOnly: b(3),
 		IgnoreStandalone: b(4), PreventIndent: b(5), ExplicitPartialContext: b(6), NoEscape: b(7),
-		StringParams: b(8), TrackIDs: b(9)}
+		StringParams: b(8), TrackIDs: b(9), NoBlocks: b(11)}
 	if b(10) {
 		o.Data = new(bool) // data: false
+	}
+	if b(12) {
+		o.Limits.MaxExpressions = 16
 	}
 	return o
 }
@@ -78,6 +82,7 @@ func FuzzParse(f *testing.F) {
 		" {{#each a}}\r\n{{/each}}",
 	} {
 		f.Add(src, uint16(0))
+		f.Add(src, uint16(1<<11|1<<12)) // NoBlocks, MaxExpressions 16
 	}
 	f.Fuzz(func(t *testing.T, src string, bits uint16) {
 		opts := fuzzOptions(bits)
@@ -89,6 +94,14 @@ func FuzzParse(f *testing.F) {
 		checkErr(t, "parse", err)
 		if err != nil {
 			return
+		}
+		seen := map[string]bool{}
+		for _, p := range tpl.Variables() {
+			k := fmt.Sprintf("%q", p)
+			if len(p) == 0 || seen[k] {
+				t.Fatalf("Variables() = %q: empty or duplicate path", tpl.Variables())
+			}
+			seen[k] = true
 		}
 		tpl.RegisterPartialTemplate("p", tpl) // self-recursion
 		fuzzRender(t, tpl, map[string]any{"a": []any{1.0, "x", nil}})
