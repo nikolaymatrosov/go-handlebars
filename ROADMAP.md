@@ -944,7 +944,7 @@ git commit -m "feat: errors.Is sentinels for every limit"
 
 ---
 
-### Task 16: `Options.NoBlocks` and `(*Error).Unwrap`
+### Task 16: `Options.NoBlocks` and `(*Error).Unwrap` ✅
 
 **Files:**
 - Modify: `handlebars.go` (`Error`, `Options`, new sentinel)
@@ -954,7 +954,7 @@ git commit -m "feat: errors.Is sentinels for every limit"
 **Interfaces:**
 - Produces: `Options.NoBlocks bool`; `ErrBlocksNotAllowed error`; `func (e *Error) Unwrap() error`; the unexported field `Error.cause error`.
 
-- [ ] **Step 1: Write the failing test.** Add `"errors"` and `"fmt"` to the imports of `parser_test.go` and append:
+- [x] **Step 1: Write the failing test.** Add `"errors"` and `"fmt"` to the imports of `parser_test.go` and append:
 
 ```go
 // NoBlocks rejects every block statement at its opening tag; everything
@@ -1046,12 +1046,12 @@ func TestNoBlocks(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails.**
+- [x] **Step 2: Run it to verify it fails.**
 
 Run: `go test -run TestNoBlocks .`
 Expected: FAIL to compile with `unknown field NoBlocks in struct literal of type Options`.
 
-- [ ] **Step 3: Extend `Error` and `Options`.** In `handlebars.go`, replace the `Error` type and its method with:
+- [x] **Step 3: Extend `Error` and `Options`.** In `handlebars.go`, replace the `Error` type and its method with:
 
 ```go
 // Error is a parse or runtime error with template position, like a
@@ -1092,7 +1092,7 @@ In `Options`, after `TrackIDs bool`, add:
 	NoBlocks bool
 ```
 
-- [ ] **Step 4: Reject blocks in the parser.** In `parser.go`, add to the `var (...)` block that holds `stmtStart`:
+- [x] **Step 4: Reject blocks in the parser.** In `parser.go`, add to the `var (...)` block that holds `stmtStart`:
 
 ```go
 	// blockStart opens a block statement: {{#x}} and {{#*x}}, {{^x}},
@@ -1110,14 +1110,14 @@ At the top of `statement`, right after `t := p.peek()`, add:
 
 The error is raised at a token before the final EOF, so `parse` returns it ahead of any later lexical error.
 
-- [ ] **Step 5: Run the tests.**
+- [x] **Step 5: Run the tests.**
 
 Run: `go test -run TestNoBlocks -v . 2>&1 | grep -E '^(---|ok|FAIL)'`
 Expected: `--- PASS: TestNoBlocks`.
 Run: `go test ./...`
 Expected: `ok`.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 gofmt -l . ; go vet ./...
