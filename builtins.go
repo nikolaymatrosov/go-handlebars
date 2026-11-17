@@ -318,9 +318,13 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 		}
 		return nil
 	case map[string]any:
-		return visitKeys(s, sortedKeys(x), func(_ int, k string) any { return x[k] }, visit)
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		return visitKeys(s, keys, true, func(_ int, k string) any { return x[k] }, visit)
 	case KeyedCollection:
-		return visitKeys(s, x.Keys(), func(_ int, k string) any { v, _ := x.Get(k); return v }, visit)
+		return visitKeys(s, x.Keys(), false, func(_ int, k string) any { v, _ := x.Get(k); return v }, visit)
 	}
 	switch rv := deref(reflect.ValueOf(ctx)); rv.Kind() {
 	case reflect.Slice, reflect.Array:
@@ -339,9 +343,8 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 		for _, k := range rv.MapKeys() {
 			keys = append(keys, k.String())
 		}
-		slices.Sort(keys)
 		kt, per := rv.Type().Key(), copyOps(rv.Type().Elem())
-		return visitKeys(s, keys, func(_ int, k string) any {
+		return visitKeys(s, keys, true, func(_ int, k string) any {
 			if v := rv.MapIndex(reflect.ValueOf(k).Convert(kt)); v.IsValid() {
 				s.ops += per
 				return v.Interface()
@@ -350,7 +353,7 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 		}, visit)
 	case reflect.Struct:
 		fs := fieldsOf(rv.Type())
-		return visitKeys(s, fs.names, func(i int, _ string) any {
+		return visitKeys(s, fs.names, false, func(i int, _ string) any {
 			f := rv.Field(fs.own[i])
 			s.ops += copyOps(f.Type())
 			return f.Interface()
@@ -359,12 +362,25 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 	return nil
 }
 
-// visitKeys charges an op per 8 keys before the first visit: the keys were
-// collected, and sorted, whether or not the loop gets past its first item.
-// Each key also costs an op per KiB, as get hashes it again.
-func visitKeys(s *renderState, keys []string, get func(i int, k string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
-	if err := s.steps(len(keys) >> 3); err != nil {
+// visitKeys visits keys, sorted first if sort. Before the first visit it
+// charges an op per 8 keys, collected whether or not the loop gets past
+// its first item, and, before sorting, an op per KiB of all the keys: a
+// sort reads each O(log n) times. Each key also costs an op per KiB, as
+// get hashes it again.
+func visitKeys(s *renderState, keys []string, sort bool, get func(i int, k string) any, visit func(v any, key string, idx int, arr, last bool) error) error {
+	n := len(keys) >> 3
+	if sort {
+		size := 0
+		for _, k := range keys {
+			size += len(k)
+		}
+		n += size >> 10
+	}
+	if err := s.steps(n); err != nil {
 		return err
+	}
+	if sort {
+		slices.Sort(keys)
 	}
 	for i, k := range keys {
 		if err := s.steps(len(k) >> 10); err != nil {
@@ -375,13 +391,4 @@ func visitKeys(s *renderState, keys []string, get func(i int, k string) any, vis
 		}
 	}
 	return nil
-}
-
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }

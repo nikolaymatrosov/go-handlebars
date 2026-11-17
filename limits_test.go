@@ -631,6 +631,38 @@ func TestEachKeysOps(t *testing.T) {
 	}
 }
 
+// {{#each}} over a map sorts its keys, comparing each O(log n) times up to
+// their common prefix. The keys cost an op per KiB before the sort, so a
+// map whose keys are over MaxOps KiB fails without sorting: here a sort
+// compares ~15 GB and each render did it before failing.
+func TestEachSortOps(t *testing.T) {
+	const n, l = 5000, 256 << 10 // 1.28M ops of keys, over the default MaxOps
+	text := strings.Repeat("a", l) + strings.Repeat("b", n)
+	m, rm := map[string]any{}, map[string]int{}
+	for i := range n {
+		m[text[i:i+l]], rm[text[i:i+l]] = 1, 1 // keys share text: a 251+ KiB common prefix
+	}
+	tpl, err := Parse("{{#each this}}{{/each}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = bounded(t, func() error {
+		for range 30 {
+			for _, v := range []any{m, rm} {
+				if err := tpl.RenderTo(io.Discard, v); err == nil {
+					return errors.New("rendered")
+				} else if le := (*LimitError)(nil); !errors.As(err, &le) || le.What != "ops" {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Errorf("err = %v, want ops LimitError", err)
+	}
+}
+
 // An object key from the data is hashed again to read its value, by each
 // and by a hash partial copying the context: each KiB costs an op, like a
 // lookup key. (Maps of up to 8 keys aren't hashed, so m has more.)

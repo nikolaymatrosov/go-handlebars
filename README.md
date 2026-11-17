@@ -104,6 +104,7 @@ On top of those, the render charges one op per KiB of:
 
 - a long name, `lookup` key or `trackIds` path that it hashes or copies, and in compat mode a name again for each enclosing context it searches;
 - an object key whose value `{{#each}}` or a hash partial reads;
+- all the keys of a map that `{{#each}}` or a hash partial sorts, charged before the sort;
 - a string whose `length` it reads, or that `{{log}}` parses as its level;
 - two equal-length string contexts it compares when entering a block;
 - an array or struct it copies out of a Go struct, slice or map.
