@@ -331,6 +331,27 @@ func TestRenderCtxCancelBulkOps(t *testing.T) {
 	}
 }
 
+// A helper name is hashed to find the helper: each KiB costs an op, like
+// a lookup key. (Maps of up to 8 keys aren't hashed, so 8 more helpers.)
+func TestLongHelperNameOps(t *testing.T) {
+	name := strings.Repeat("a", 600<<10) // 600 ops per call
+	for _, src := range []string{"{{#each rows}}{{" + name + "}}{{/each}}", "{{#each rows}}{{" + name + " 1}}{{/each}}"} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: 5000}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range 8 {
+			tpl.RegisterHelper("h"+itoa(i), func(*HelperOptions) (any, error) { return nil, nil })
+		}
+		tpl.RegisterHelper(name, func(*HelperOptions) (any, error) { return nil, nil })
+		_, err = tpl.Render(map[string]any{"rows": make([]any, 100)})
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%.20s…: err = %v, want ops LimitError", src, err)
+		}
+	}
+}
+
 type helperErr struct{ msg string }
 
 func (e *helperErr) Error() string { return e.msg }

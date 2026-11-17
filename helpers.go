@@ -267,11 +267,13 @@ func callPath(n node) *pathExpr {
 // helper is container.helpers[name]. runtime.js moves helperMissing and
 // blockHelperMissing to container.hooks, so templates can't call them.
 // builtin reports that h is a library builtin (called directly) rather
-// than user code (called through s.call).
+// than user code (called through s.call). Hashing name costs an op per
+// KiB, unchecked like prop's.
 func (s *renderState) helper(name string) (h Helper, builtin bool) {
 	if name == "helperMissing" || name == "blockHelperMissing" {
 		return nil, false
 	}
+	s.ops += len(name) >> 10
 	if h = s.t.helpers[name]; h != nil {
 		return h, false
 	}
