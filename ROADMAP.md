@@ -1435,7 +1435,7 @@ git commit -m "feat: Template.Variables lists the root-context paths a template 
 
 ---
 
-### Task 18: Fuzz the new options and `Variables`
+### Task 18: Fuzz the new options and `Variables` ✅
 
 **Files:**
 - Modify: `fuzz_test.go`
@@ -1443,7 +1443,7 @@ git commit -m "feat: Template.Variables lists the root-context paths a template 
 **Interfaces:**
 - Consumes: `Options.NoBlocks`, `Limits.MaxExpressions`, `Template.Variables` (Tasks 14, 16, 17).
 
-- [ ] **Step 1: New option bits.** In `fuzzOptions`, add `NoBlocks: b(11)` to the `Options` literal and, before `return o`:
+- [x] **Step 1: New option bits.** In `fuzzOptions`, add `NoBlocks: b(11)` to the `Options` literal and, before `return o`:
 
 ```go
 	if b(12) {
@@ -1451,14 +1451,14 @@ git commit -m "feat: Template.Variables lists the root-context paths a template 
 	}
 ```
 
-- [ ] **Step 2: Seed both settings.** In `FuzzParse`, replace `f.Add(src, uint16(0))` with:
+- [x] **Step 2: Seed both settings.** In `FuzzParse`, replace `f.Add(src, uint16(0))` with:
 
 ```go
 		f.Add(src, uint16(0))
 		f.Add(src, uint16(1<<11|1<<12)) // NoBlocks, MaxExpressions 16
 ```
 
-- [ ] **Step 3: Check `Variables` on every parsed template.** In `FuzzParse`, after the `if err != nil { return }` that follows `checkErr(t, "parse", err)`, add:
+- [x] **Step 3: Check `Variables` on every parsed template.** In `FuzzParse`, after the `if err != nil { return }` that follows `checkErr(t, "parse", err)`, add:
 
 ```go
 		seen := map[string]bool{}
@@ -1473,7 +1473,7 @@ git commit -m "feat: Template.Variables lists the root-context paths a template 
 
 Add `"fmt"` to the imports. In the comment at the top of the file, after "Parse and Render never panic", add "(nor does Variables, which returns no empty or duplicate path)".
 
-- [ ] **Step 4: Run the fuzzers.**
+- [x] **Step 4: Run the fuzzers.**
 
 Run: `go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 90s .`
 Expected: `PASS` and no new files under `testdata/fuzz/`.
@@ -1481,12 +1481,12 @@ Run: `go test -run '^$' -fuzz '^FuzzRender$' -fuzztime 30s .`
 Expected: `PASS`.
 If a fuzzer fails, fix the library bug it found (superpowers:systematic-debugging), keep the generated `testdata/fuzz/...` seed, and add it in the commit.
 
-- [ ] **Step 5: Run the suite.**
+- [x] **Step 5: Run the suite.**
 
 Run: `go test ./...`
 Expected: `ok`.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 gofmt -l . ; go vet ./...
