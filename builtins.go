@@ -309,14 +309,7 @@ func forOwn(ctx any, visit func(v any, key string, idx int, arr, last bool) erro
 	case KeyedCollection:
 		return visitKeys(x.Keys(), func(k string) any { v, _ := x.Get(k); return v }, visit)
 	}
-	rv := reflect.ValueOf(ctx)
-	for i := 0; i < 8 && (rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface); i++ {
-		if rv.IsNil() {
-			return nil
-		}
-		rv = rv.Elem()
-	}
-	switch rv.Kind() {
+	switch rv := deref(reflect.ValueOf(ctx)); rv.Kind() {
 	case reflect.Slice, reflect.Array:
 		for i, n := 0, rv.Len(); i < n; i++ {
 			if err := visit(rv.Index(i).Interface(), "", i, true, i == n-1); err != nil {

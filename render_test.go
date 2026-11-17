@@ -193,6 +193,26 @@ func TestRenderIsEmpty(t *testing.T) {
 	}
 }
 
+// Pointers are followed for truthiness and emptiness, as for lookups and
+// printing: a *bool false is falsy, a pointer to an empty slice is empty.
+func TestRenderPointerTruthy(t *testing.T) {
+	f, e, one := false, []int{}, []int{1}
+	pf := &f
+	for i, c := range []struct {
+		v    any
+		want string
+	}{
+		{&f, "no"}, {&pf, "no"}, {(*bool)(nil), "no"}, {new(any), "no"},
+		{&e, "no"}, {&one, "yes"}, {new(SafeString), "yes"},
+	} {
+		for _, src := range []string{"{{#if v}}yes{{else}}no{{/if}}", "{{#with v}}yes{{else}}no{{/with}}"} {
+			if got := mustRender(t, Options{}, src, map[string]any{"v": c.v}); got != c.want {
+				t.Errorf("%d: %s = %q, want %q", i, src, got, c.want)
+			}
+		}
+	}
+}
+
 func TestRenderCompatDepthed(t *testing.T) {
 	got := mustRender(t, Options{Compat: true}, "{{#o}}{{#i}}{{x.y}}{{this.x.y}}|{{/i}}{{/o}}", map[string]any{
 		"x": map[string]any{"y": "Y"}, "o": []any{map[string]any{"i": []any{1}}}})

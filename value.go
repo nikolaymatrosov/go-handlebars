@@ -72,6 +72,15 @@ func jsTruthy(v any) bool {
 	}
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
+	case reflect.Pointer: // followed, as by lookups and printing
+		switch e := deref(rv); e.Kind() {
+		case reflect.Invalid:
+			return false
+		case reflect.Struct, reflect.Array: // objects: truthy, and not copied out
+			return true
+		default:
+			return jsTruthy(e.Interface())
+		}
 	case reflect.Bool:
 		return rv.Bool()
 	case reflect.String:
@@ -95,7 +104,7 @@ func isEmpty(v any) bool {
 		if isNull(v) {
 			return true
 		}
-		switch rv := reflect.ValueOf(v); rv.Kind() {
+		switch rv := deref(reflect.ValueOf(v)); rv.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			return rv.Int() != 0
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
@@ -105,7 +114,7 @@ func isEmpty(v any) bool {
 		}
 		return true
 	}
-	rv := reflect.ValueOf(v)
+	rv := deref(reflect.ValueOf(v))
 	return (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array) && rv.Len() == 0
 }
 
@@ -160,16 +169,22 @@ func lookupProperty(parent any, name string) (any, bool) {
 		}
 		return nil, false
 	}
-	return lookupReflect(reflect.ValueOf(parent), name)
+	return lookupReflect(deref(reflect.ValueOf(parent)), name)
 }
 
-func lookupReflect(rv reflect.Value, name string) (any, bool) {
+// deref follows pointers and interfaces to the value they hold, without
+// copying it; nil, or a chain longer than maxValueDepth, is the zero Value.
+func deref(rv reflect.Value) reflect.Value {
 	for i := 0; rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface; i++ {
 		if rv.IsNil() || i == maxValueDepth {
-			return nil, false
+			return reflect.Value{}
 		}
 		rv = rv.Elem()
 	}
+	return rv
+}
+
+func lookupReflect(rv reflect.Value, name string) (any, bool) {
 	var v reflect.Value
 	switch rv.Kind() {
 	case reflect.Map:
