@@ -685,6 +685,28 @@ func TestLogLevelOps(t *testing.T) {
 	}
 }
 
+// A long level can't be a level name, so it isn't lowercased (copied) to
+// match one; levels that are names still match in any case.
+func TestLogLevelNoCopy(t *testing.T) {
+	tpl, err := Parse("{{log 1 level=big}}{{log 2 level='WARN'}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var levels []string
+	tpl.Logger = func(level string, _ ...any) { levels = append(levels, level) }
+	data := map[string]any{"big": strings.Repeat("W", 1<<20)}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	err = tpl.RenderTo(io.Discard, data)
+	runtime.ReadMemStats(&after)
+	if n := after.TotalAlloc - before.TotalAlloc; n > 64<<10 || err != nil {
+		t.Errorf("allocated %d bytes, err = %v", n, err)
+	}
+	if fmt.Sprint(levels) != "[warn]" { // the long level is NaN: dropped
+		t.Errorf("levels = %v, want [warn]", levels)
+	}
+}
+
 // In compat mode a name missing from the context is looked up in every
 // enclosing one, hashed again at each: each depth past the first costs an
 // op per KiB too, not just the one the path's lookup pays.

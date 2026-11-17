@@ -176,8 +176,13 @@ func logLevel(v any) (float64, bool) {
 	case int:
 		return float64(x), true
 	case string:
-		if i := slices.Index(logLevels[:], strings.ToLower(x)); i >= 0 {
-			return float64(i), true
+		// Only ASCII letters and the 3-byte Kelvin sign lowercase to the
+		// letters of a level name, so a longer string can't match one: it
+		// isn't lowercased (copied).
+		if len(x) <= 32 {
+			if i := slices.Index(logLevels[:], strings.ToLower(x)); i >= 0 {
+				return float64(i), true
+			}
 		}
 		x = strings.TrimSpace(x)
 		end := 0
