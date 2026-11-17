@@ -639,9 +639,14 @@ func (s *renderState) lookupLoose(p *pathExpr, ctx any) any {
 }
 
 // depthedLookup is runtime.js container.lookup (compat mode): the first
-// context, innermost out, that has a non-null property name.
+// context, innermost out, that has a non-null property name. Each depth
+// past the first hashes name again: an op per KiB, unchecked like prop's
+// (the path's lookup paid for the first).
 func (s *renderState) depthedLookup(name string) any {
 	for i := len(s.depths) - 1; i >= 0; i-- {
+		if i < len(s.depths)-1 {
+			s.ops += len(name) >> 10
+		}
 		if d := s.depths[i]; jsTruthy(d) {
 			if v, _ := s.prop(d, name); !isNull(v) {
 				return v

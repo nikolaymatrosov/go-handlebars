@@ -685,6 +685,22 @@ func TestLogLevelOps(t *testing.T) {
 	}
 }
 
+// In compat mode a name missing from the context is looked up in every
+// enclosing one, hashed again at each: each depth past the first costs an
+// op per KiB too, not just the one the path's lookup pays.
+func TestCompatDepthedLookupOps(t *testing.T) {
+	k := strings.Repeat("k", 300<<10) // 300 ops per depth
+	tpl, err := ParseWithOptions("{{#with a}}{{#with b}}{{"+k+"}}{{/with}}{{/with}}", Options{Compat: true, Limits: Limits{MaxOps: 700}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = tpl.Render(map[string]any{"a": map[string]any{"b": map[string]any{"x": 1}}})
+	var le *LimitError
+	if !errors.As(err, &le) || le.What != "ops" {
+		t.Errorf("err = %v, want ops LimitError", err)
+	}
+}
+
 // Under TrackIDs, contextPath and block-param ids are copied per item and
 // per call, and one id can be as long as the template (`this/./././...`
 // drops the dots from the lookup but keeps them in the id): each KiB
