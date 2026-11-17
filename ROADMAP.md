@@ -1127,7 +1127,7 @@ git commit -m "feat: Options.NoBlocks rejects block statements at parse time"
 
 ---
 
-### Task 17: `Template.Variables()`
+### Task 17: `Template.Variables()` ✅
 
 **Files:**
 - Create: `variables.go`
@@ -1140,7 +1140,7 @@ git commit -m "feat: Options.NoBlocks rejects block statements at parse time"
 **Interfaces:**
 - Produces: `func (t *Template) Variables() [][]string`; `blockNode.inverted bool`; `isBuiltin(name string) bool`.
 
-- [ ] **Step 1: Write the failing test.** Create `variables_test.go`:
+- [x] **Step 1: Write the failing test.** Create `variables_test.go`:
 
 ```go
 package handlebars
@@ -1224,12 +1224,12 @@ func TestVariables(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails.**
+- [x] **Step 2: Run it to verify it fails.**
 
 Run: `go test -run TestVariables .`
 Expected: FAIL to compile with `tpl.Variables undefined`.
 
-- [ ] **Step 3: Record inverted blocks.** In `ast.go`, add a field to `blockNode` after `decorator bool`:
+- [x] **Step 3: Record inverted blocks.** In `ast.go`, add a field to `blockNode` after `decorator bool`:
 
 ```go
 	inverted                            bool       // {{^x}}: the parser swapped program and inverse, so inverse comes first in the source
@@ -1237,7 +1237,7 @@ Expected: FAIL to compile with `tpl.Variables undefined`.
 
 Run `gofmt -w ast.go` to realign the field block. In `parser.go` `prepareBlock`, add `inverted: inverted,` to the `&blockNode{...}` literal.
 
-- [ ] **Step 4: Share the builtin list.** In `helpers.go`, replace `known` with:
+- [x] **Step 4: Share the builtin list.** In `helpers.go`, replace `known` with:
 
 ```go
 // known is compiler.js options.knownHelpers[name]: the builtins, overridden
@@ -1259,7 +1259,7 @@ func isBuiltin(name string) bool {
 }
 ```
 
-- [ ] **Step 5: Implement `Variables`.** Create `variables.go`:
+- [x] **Step 5: Implement `Variables`.** Create `variables.go`:
 
 ```go
 package handlebars
@@ -1412,20 +1412,20 @@ func (v *varWalker) add(parts []string) {
 }
 ```
 
-- [ ] **Step 6: Check concurrency under the race detector.** In `render_test.go` `TestRenderParallel`, inside the goroutine's `for i := 0; i < 10; i++` loop, after `buf.Reset()`, add:
+- [x] **Step 6: Check concurrency under the race detector.** In `render_test.go` `TestRenderParallel`, inside the goroutine's `for i := 0; i < 10; i++` loop, after `buf.Reset()`, add:
 
 ```go
 					_ = tpl.Variables() // reads the AST while other goroutines render
 ```
 
-- [ ] **Step 7: Run the tests.**
+- [x] **Step 7: Run the tests.**
 
 Run: `go test -run 'TestVariables|TestRenderParallel' -race -v . 2>&1 | grep -E '^(---|ok|FAIL)'`
 Expected: both `--- PASS`.
 Run: `go test ./...`
 Expected: `ok`.
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ```bash
 gofmt -l . ; go vet ./...
