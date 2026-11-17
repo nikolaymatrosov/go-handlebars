@@ -241,6 +241,11 @@ func (o *Options) known(name string) bool {
 	if v, ok := o.KnownHelpers[name]; ok {
 		return v
 	}
+	return isBuiltin(name)
+}
+
+// isBuiltin reports whether name is a builtin helper or hook.
+func isBuiltin(name string) bool {
 	switch name {
 	case "helperMissing", "blockHelperMissing", "each", "if", "unless", "with", "log", "lookup":
 		return true

@@ -669,6 +669,7 @@ func (p *parser) prepareBlock(open openTag, prog *program, inv *inverseInfo, clo
 		loc:        at(open.tok),
 		call:       open.call,
 		decorator:  strings.Contains(open.tok.text, "*"),
+		inverted:   inverted,
 		openStrip:  open.strip,
 		closeStrip: closeStrip,
 	}

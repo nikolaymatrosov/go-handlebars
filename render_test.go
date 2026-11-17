@@ -745,6 +745,7 @@ func TestRenderParallel(t *testing.T) {
 				var buf bytes.Buffer
 				for i := 0; i < 10; i++ {
 					buf.Reset()
+					_ = tpl.Variables() // reads the AST while other goroutines render
 					err := tpl.RenderTo(&buf, data)
 					got, err2 := tpl.Render(data)
 					if err != nil || err2 != nil || buf.String() != want || got != want {

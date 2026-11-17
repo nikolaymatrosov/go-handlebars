@@ -91,6 +91,7 @@ type blockNode struct {
 	call
 	program, inverse                    *program
 	decorator                           bool
+	inverted                            bool       // {{^x}}: the parser swapped program and inverse, so inverse comes first in the source
 	openStrip, inverseStrip, closeStrip stripFlags // whitespace-control input
 }
 
