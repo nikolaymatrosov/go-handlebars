@@ -1622,11 +1622,11 @@ git commit -m "docs: NoBlocks, MaxExpressions, sentinels and Variables"
 
 ---
 
-### Task 20: Release v0.2.0
+### Task 20: Release v0.2.0 ✅
 
 **Files:** none (git, GitHub)
 
-- [ ] **Step 1: Full gate on `release/v0.2.0`.**
+- [x] **Step 1: Full gate on `release/v0.2.0`.**
 
 ```bash
 test -z "$(gofmt -l .)" && go vet ./...
@@ -1638,25 +1638,27 @@ git status --short                                  # only the untracked require
 
 Expected: everything green. `git status` shows only `?? 2026-11-17-go-handlebars-missing-api-design.md`.
 
-- [ ] **Step 2: Release notes.** Write `/tmp/go-handlebars-v0.2.0.md`:
+- [x] **Step 2: Release notes.** Write `/tmp/go-handlebars-v0.2.0.md`:
 
 ```markdown
 v0.2.0: template inspection and policy API
 
 New
-- `Limits.MaxExpressions` bounds how many expressions `Parse` accepts: every mustache, block and `{{else x}}` link, subexpression, partial, partial block, raw block and decorator counts as one. Lexing stops at the first expression over the limit, so together with `MaxTemplateSize` it bounds parse memory for expression-dense sources.
-- `Options.NoBlocks` rejects block statements at parse time (`{{#x}}`, `{{^x}}`, raw blocks, partial blocks, decorator blocks such as `{{#*inline}}`). The error is an `*Error` at the first block that matches `ErrBlocksNotAllowed`.
+- `Limits.MaxExpressions` bounds how many expressions `Parse` accepts: every mustache, block and `{{else x}}` link, subexpression, partial, partial block, raw block and decorator counts as one. Lexing stops at the first expression over the limit, so together with `MaxTemplateSize` it bounds parse memory for expression-dense sources. Arguments, hash pairs and path segments are not counted; `MaxTemplateSize` alone bounds those.
+- `Options.NoBlocks` rejects block statements at parse time (`{{#x}}`, `{{^x}}`, raw blocks, partial blocks, decorator blocks such as `{{#*inline}}`). The error is an `*Error` at the first block's opening tag; `errors.Is(err, ErrBlocksNotAllowed)` reports it.
 - `Template.Variables()` lists the root-context paths a template reads (top level, builtin `if`/`unless` bodies, `@root.…` anywhere), so data can be checked before rendering.
 - `errors.Is` sentinels: `ErrTemplateSize`, `ErrParseDepth`, `ErrRenderDepth`, `ErrOutputSize`, `ErrOps` and `ErrExpressions` match a `*LimitError` through the new `LimitError.Is`. `ErrBlocksNotAllowed` matches through the new `Error.Unwrap`.
 
 Breaking changes
-- `MaxExpressions` defaults to 100,000. A template with more than 100,000 expressions that parsed in v0.1.0 now fails with a `*LimitError` (`What: "expressions"`). Set `Limits.MaxExpressions` higher to accept it.
-- `Error` has a new unexported field, so unkeyed composite literals such as `handlebars.Error{1, 0, "msg"}` outside the package no longer compile. Keyed literals are unaffected.
+- `MaxExpressions` defaults to 100,000. A template with more than 100,000 expressions that parsed in v0.1.0 now fails with a `*LimitError` (`What: "expressions"`). Set `Limits.MaxExpressions` higher to accept it. The limit is checked while tokenizing, so it is reported ahead of syntax errors and `NoBlocks` rejections, like `MaxTemplateSize`.
+- `Limits` and `Options` have new fields (`MaxExpressions`, `NoBlocks`), so unkeyed composite literals of them, such as `handlebars.Limits{1 << 20, 100, 100, 8 << 20, 1_000_000}`, no longer compile.
+- `Error` has a new unexported field, so unkeyed composite literals such as `handlebars.Error{1, 0, "msg"}` outside the package no longer compile.
+- Keyed literals are unaffected.
 
 Spec suite: 632/632 (handlebars-spec 748917a, handlebars.js v4.7.9).
 ```
 
-- [ ] **Step 3: Merge and tag.**
+- [x] **Step 3: Merge and tag.**
 
 ```bash
 git checkout main
@@ -1665,7 +1667,7 @@ git tag -a v0.2.0 -F /tmp/go-handlebars-v0.2.0.md
 git show v0.2.0 --stat | head -30
 ```
 
-- [ ] **Step 4: Publish.**
+- [x] **Step 4: Publish.**
 
 ```bash
 git push origin main v0.2.0
@@ -1673,7 +1675,7 @@ gh release create v0.2.0 --verify-tag --title "v0.2.0" --notes-file /tmp/go-hand
 gh release view v0.2.0
 ```
 
-- [ ] **Step 5: Verify the module resolves.**
+- [x] **Step 5: Verify the module resolves.**
 
 ```bash
 GOPROXY=https://proxy.golang.org GOFLAGS=-mod=mod go list -m github.com/nikolaymatrosov/go-handlebars@v0.2.0
