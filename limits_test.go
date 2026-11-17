@@ -633,6 +633,40 @@ func TestEachWideStruct(t *testing.T) {
 	}
 }
 
+// Reading an array or struct held by value out of a Go struct, slice or
+// map copies it (reflect Interface), by lookup or by each: each KiB copied
+// costs an op. A value an any already holds is handed out without a copy.
+func TestCompositeCopyOps(t *testing.T) {
+	type blob [600 << 10]byte // 600 ops per copy
+	type doc struct {
+		Blob blob
+		Arrs []blob
+		M    map[string]blob
+	}
+	d := &doc{Arrs: make([]blob, 1), M: map[string]blob{"k": {}}}
+	for _, src := range []string{
+		"{{#with Blob}}{{/with}}", "{{Arrs.[0].length}}", "{{M.k.length}}",
+		"{{#each Arrs}}{{/each}}", "{{#each M}}{{/each}}", "{{#each this}}{{/each}}",
+	} {
+		tpl, err := ParseWithOptions(src, Options{Limits: Limits{MaxOps: 500}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = tpl.Render(d)
+		var le *LimitError
+		if !errors.As(err, &le) || le.What != "ops" {
+			t.Errorf("%s: err = %v, want ops LimitError", src, err)
+		}
+	}
+	tpl, err := ParseWithOptions("{{#with b}}{{/with}}{{#each a}}{{/each}}", Options{Limits: Limits{MaxOps: 500}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tpl.Render(map[string]any{"b": blob{}, "a": []any{blob{}}}); err != nil {
+		t.Errorf("held by an any: err = %v, want nil", err)
+	}
+}
+
 // Under TrackIDs, contextPath and block-param ids are copied per item and
 // per call, and one id can be as long as the template (`this/./././...`
 // drops the dots from the lookup but keeps them in the id): each KiB

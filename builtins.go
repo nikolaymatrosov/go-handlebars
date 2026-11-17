@@ -314,7 +314,9 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 	}
 	switch rv := deref(reflect.ValueOf(ctx)); rv.Kind() {
 	case reflect.Slice, reflect.Array:
+		per := copyOps(rv.Type().Elem()) // Interface copies each item; unchecked, as iter steps
 		for i, n := 0, rv.Len(); i < n; i++ {
+			s.ops += per
 			if err := visit(rv.Index(i).Interface(), "", i, true, i == n-1); err != nil {
 				return err
 			}
@@ -328,9 +330,10 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 			keys = append(keys, k.String())
 		}
 		slices.Sort(keys)
-		kt := rv.Type().Key()
+		kt, per := rv.Type().Key(), copyOps(rv.Type().Elem())
 		return visitKeys(s, keys, func(_ int, k string) any {
 			if v := rv.MapIndex(reflect.ValueOf(k).Convert(kt)); v.IsValid() {
+				s.ops += per
 				return v.Interface()
 			}
 			return nil // deleted mid-loop by a helper: JS context[field] is undefined
@@ -344,7 +347,11 @@ func forOwn(s *renderState, ctx any, visit func(v any, key string, idx int, arr,
 				names, idx = append(names, t.Field(i).Name), append(idx, i)
 			}
 		}
-		return visitKeys(s, names, func(i int, _ string) any { return rv.Field(idx[i]).Interface() }, visit)
+		return visitKeys(s, names, func(i int, _ string) any {
+			f := rv.Field(idx[i])
+			s.ops += copyOps(f.Type())
+			return f.Interface()
+		}, visit)
 	}
 	return nil
 }

@@ -334,15 +334,31 @@ func (s *renderState) steps(n int) error {
 }
 
 // prop is lookupProperty plus one op per KiB of a string whose length it
-// reads: utf16Len scans the whole string. The charge is not checked here;
-// the render's next step, or its final limit check, reports an overflow.
+// reads (utf16Len scans the whole string) and of an array or struct that a
+// reflect read copies out. The charge is not checked here; the render's
+// next step, or its final limit check, reports an overflow.
 func (s *renderState) prop(v any, name string) (any, bool) {
 	if name == "length" {
 		if rv := deref(reflect.ValueOf(v)); rv.Kind() == reflect.String {
 			s.ops += rv.Len() >> 10
 		}
 	}
-	return lookupProperty(v, name)
+	w, ok := lookupProperty(v, name)
+	switch v.(type) {
+	case nil, map[string]any, []any, KeyedCollection, string: // hand out what they hold
+	default:
+		s.ops += copyOps(reflect.TypeOf(w))
+	}
+	return w, ok
+}
+
+// copyOps is one op per KiB of a value of type t that reflect's Interface
+// copies: an array or struct held by value (nil t: none).
+func copyOps(t reflect.Type) int {
+	if t == nil || t.Kind() != reflect.Array && t.Kind() != reflect.Struct {
+		return 0
+	}
+	return int(t.Size() >> 10)
 }
 
 // same is sameContext plus one op per KiB of two equal-length strings it
