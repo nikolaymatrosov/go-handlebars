@@ -188,6 +188,7 @@ func (l *freeList[T]) get() *T {
 		return new(T)
 	}
 	x := (*l)[n-1]
+	(*l)[n-1] = nil // a value never put back mustn't stay reachable from the pool
 	*l = (*l)[:n-1]
 	return x
 }

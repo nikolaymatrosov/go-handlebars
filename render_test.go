@@ -835,6 +835,17 @@ func TestRenderParallel(t *testing.T) {
 	}
 }
 
+// TestFreeListGetDropsSlot: a value taken and never put back (invokeHelper
+// bailing out on an argument error) isn't pinned by the list's array.
+func TestFreeListGetDropsSlot(t *testing.T) {
+	var l freeList[HelperOptions]
+	l.put(new(HelperOptions))
+	l.get()
+	if l[:1][0] != nil {
+		t.Error("get left the taken value in the backing array")
+	}
+}
+
 // TestPooledStateReset: a render that fails deep inside loops, block
 // params and an indented partial leaves nothing behind for the next one.
 func TestPooledStateReset(t *testing.T) {
