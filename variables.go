@@ -19,7 +19,9 @@ import (
 // that @root.x is reported as x wherever it appears. A callee is a helper, not a
 // variable, only when it is a bare name (one segment, no this, ./ or @) and
 // the call has arguments or a hash, is a subexpression, or names a builtin,
-// a KnownHelpers entry set to true or a helper registered on t. Literals,
+// a KnownHelpers entry set to true or a helper registered on t; under
+// KnownHelpersOnly a call without arguments is a helper only if the
+// builtins or KnownHelpers know its name, registered or not. Literals,
 // static partial names, other @data, block params, ../ paths, this, .,
 // decorator names and arguments (but for @root.x) and the contents of
 // registered partials are not reported: call Variables on those partials.
@@ -101,8 +103,10 @@ func (v *varWalker) expr(n node, root bool) {
 }
 
 // helperRef reports whether callee p of c names a helper, not a variable.
+// Under KnownHelpersOnly the parser makes an unknown bare name kindSimple:
+// a context read, whatever helpers are registered.
 func (v *varWalker) helperRef(p *pathExpr, c *call, sub bool) bool {
-	if !bareName(p) {
+	if !bareName(p) || c.kind == kindSimple {
 		return false
 	}
 	name := p.parts[0]
@@ -120,7 +124,7 @@ func (v *varWalker) blockScope(c *call) (fn, inverse bool) {
 	if !ok {
 		return false, false
 	}
-	if bareName(p) && !p.bp {
+	if bareName(p) && c.kind != kindSimple { // kindSimple: a block param or a section
 		switch name := p.parts[0]; {
 		case v.registered(name):
 			return false, false

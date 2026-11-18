@@ -10,6 +10,7 @@ func TestVariables(t *testing.T) {
 		src     string
 		helpers []string        // registered before Variables is called
 		known   map[string]bool // Options.KnownHelpers
+		only    bool            // Options.KnownHelpersOnly
 		want    [][]string
 	}{
 		// The requirements table.
@@ -69,9 +70,16 @@ func TestVariables(t *testing.T) {
 		{src: `{{#> layout user t=title}}{{body}}{{/layout}} {{@root}} {{"lit"}} {{> p}}`, want: [][]string{{"user"}, {"title"}}},
 		{src: "{{{{raw}}}} {{x}} {{{{/raw}}}}", want: [][]string{{"raw"}}},
 		{src: "text {{! c }}", want: nil},
+
+		// KnownHelpersOnly: a bare name not in KnownHelpers reads the context, registered or not.
+		{src: "{{name}}", helpers: []string{"name"}, only: true, want: [][]string{{"name"}}},
+		{src: "{{k}}", known: map[string]bool{"k": true}, only: true, want: nil},
+		{src: "{{if}}", known: map[string]bool{"if": false}, only: true, want: [][]string{{"if"}}},
+		{src: "{{#items}}{{else}}{{hint}}{{/items}}", helpers: []string{"items"}, only: true, want: [][]string{{"items"}, {"hint"}}},
+		{src: "{{#if}}{{a}}{{else}}{{b}}{{/if}}", known: map[string]bool{"if": false}, only: true, want: [][]string{{"if"}, {"b"}}},
 	}
 	for _, c := range cases {
-		tpl, err := ParseWithOptions(c.src, Options{KnownHelpers: c.known})
+		tpl, err := ParseWithOptions(c.src, Options{KnownHelpers: c.known, KnownHelpersOnly: c.only})
 		if err != nil {
 			t.Fatalf("%q: %v", c.src, err)
 		}
